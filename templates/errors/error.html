@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#052c3d">
+  <title>{{ code }} · {{ title }} · AquaLedger</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230e9488'/%3E%3Cpath d='M16 6s7 7.4 7 12a7 7 0 0 1-14 0c0-4.6 7-12 7-12Z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="error-body">
+{% include '_sprite.html' %}
+{% from '_macros.html' import icon %}
+<main class="error-card">
+  <a class="brand" href="{{ url_for('main.landing') }}" style="justify-content:center;color:var(--ink);margin-bottom:22px">
+    <span class="brand-mark">{{ icon('droplet') }}</span>
+    <span>
+      <span class="brand-name">AquaLedger</span>
+      <span class="brand-tag" style="color:var(--teal-2)">Proof of every drop</span>
+    </span>
+  </a>
+  <div class="error-code">{{ code }}</div>
+  <h1>{{ title }}</h1>
+  <p>{{ message }}</p>
+  <div class="error-home">
+    {% if current_user.is_authenticated %}
+    <a class="btn btn-primary" href="{{ url_for('dashboard.index') }}">{{ icon('dashboard') }} Back to dashboard</a>
+    {% else %}
+    <a class="btn btn-primary" href="{{ url_for('auth.login') }}">{{ icon('lock') }} Sign in</a>
+    {% endif %}
+    <a class="btn btn-outline" href="{{ url_for('main.landing') }}">{{ icon('home') }} Home</a>
+  </div>
+  <p class="tiny muted" style="margin-top:26px">If this keeps happening, check the server log or the <a href="{{ url_for('health') }}">health endpoint</a>.</p>
+</main>
+</body>
+</html>

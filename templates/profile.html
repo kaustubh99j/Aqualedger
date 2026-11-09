@@ -1,0 +1,261 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon, copy_button %}
+{% block title %}My profile · AquaLedger{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Account &amp; wallet</div>
+    <h1>My profile</h1>
+    <p>Manage your account details and link the MetaMask wallet used to sign on-chain proofs.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn-outline" href="{{ url_for('blockchain.index') }}">{{ icon('chain') }} Blockchain proofs</a>
+    <a class="btn btn-primary" href="{{ url_for('readings.new') }}">{{ icon('plus') }} Record reading</a>
+  </div>
+</div>
+
+<div class="grid split-2-1">
+  <div class="stack">
+    <article class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Personal details</div>
+          <div class="card-sub">Your email is the account identifier and cannot be changed here.</div>
+        </div>
+        <span class="kpi-icon teal">{{ icon('user') }}</span>
+      </div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('dashboard.update_profile') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="form-grid">
+            <div class="field">
+              <label for="name">Full name <span class="required">*</span></label>
+              <input class="input" id="name" name="name" maxlength="120" required value="{{ current_user.name }}">
+            </div>
+            <div class="field">
+              <label for="email">Email address</label>
+              <input class="input" id="email" type="email" value="{{ current_user.email }}" readonly aria-readonly="true">
+            </div>
+            <div class="field">
+              <label for="phone">Phone number</label>
+              <input class="input" id="phone" name="phone" maxlength="30" value="{{ current_user.phone or '' }}" placeholder="+91 98765 43210">
+              <span class="hint">Optional. Used only for account contact, never written on-chain.</span>
+            </div>
+            <div class="field">
+              <label>Account role</label>
+              <input class="input" value="{{ 'Administrator' if current_user.is_admin else 'Resident account' }}" readonly>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary" type="submit" data-loading="Saving...">{{ icon('check') }} Save changes</button>
+            <span class="small muted">Member since {{ current_user.created_at|dt if current_user.created_at else '--' }}</span>
+          </div>
+        </form>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Change password</div>
+          <div class="card-sub">Use at least 8 characters with a letter and a number.</div>
+        </div>
+        <span class="kpi-icon amber">{{ icon('lock') }}</span>
+      </div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('dashboard.change_password') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="form-grid">
+            <div class="field full">
+              <label for="current_password">Current password <span class="required">*</span></label>
+              <div class="password-field">
+                <input class="input" id="current_password" name="current_password" type="password" autocomplete="current-password" required>
+                <button class="password-toggle" type="button" data-password-toggle="current_password" aria-label="Show password">{{ icon('eye', 'icon-sm') }}</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="new_password">New password <span class="required">*</span></label>
+              <div class="password-field">
+                <input class="input" id="new_password" name="new_password" type="password" autocomplete="new-password" minlength="8" required>
+                <button class="password-toggle" type="button" data-password-toggle="new_password" aria-label="Show password">{{ icon('eye', 'icon-sm') }}</button>
+              </div>
+            </div>
+            <div class="field">
+              <label for="confirm_password">Confirm new password <span class="required">*</span></label>
+              <div class="password-field">
+                <input class="input" id="confirm_password" name="confirm_password" type="password" autocomplete="new-password" minlength="8" required>
+                <button class="password-toggle" type="button" data-password-toggle="confirm_password" aria-label="Show password">{{ icon('eye', 'icon-sm') }}</button>
+              </div>
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-outline" type="submit" data-loading="Updating...">{{ icon('key') }} Update password</button>
+          </div>
+        </form>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">My households</div>
+          <div class="card-sub">{{ households|length }} household{{ '' if households|length == 1 else 's' }} assigned to your account</div>
+        </div>
+        <a class="btn-link" href="{{ url_for('households.index') }}">Manage</a>
+      </div>
+      <div class="table-wrap">
+        {% if households %}
+        <table class="data">
+          <thead><tr><th>Household</th><th>Meter</th><th>Residents</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+            {% for h in households %}
+            <tr>
+              <td><span class="badge badge-teal">{{ h.household_code }}</span> {{ h.name }}</td>
+              <td class="mono">{{ h.meter_id }}</td>
+              <td>{{ h.members_count }}</td>
+              <td><span class="badge badge-{{ 'success' if h.status == 'active' else 'neutral' }}"><span class="dot"></span>{{ h.status|title }}</span></td>
+              <td class="right"><a class="btn btn-ghost btn-sm" href="{{ url_for('households.detail', household_id=h.id) }}">Open {{ icon('chevron', 'icon-sm') }}</a></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty">
+          <div class="empty-icon">{{ icon('home') }}</div>
+          <h3>No household assigned</h3>
+          <p>{{ 'Add a household from the Households page.' if current_user.is_admin else 'An administrator needs to assign a household to your account before you can record readings.' }}</p>
+          <a class="btn btn-outline btn-sm" href="{{ url_for('households.index') }}">{{ icon('home') }} Households</a>
+        </div>
+        {% endif %}
+      </div>
+    </article>
+  </div>
+
+  <div class="stack">
+    <article class="card" id="walletCard">
+      <div class="card-head">
+        <div>
+          <div class="card-title">MetaMask wallet</div>
+          <div class="card-sub">Link a wallet to sign anchoring transactions</div>
+        </div>
+        <span class="kpi-icon purple">{{ icon('wallet') }}</span>
+      </div>
+      <div class="card-body">
+        <div class="flex between" style="margin-bottom:12px">
+          <span class="small muted">Connection status</span>
+          <span id="walletStatusBadge" class="badge badge-{{ 'success' if wallet_linked else 'neutral' }}">
+            <span class="dot"></span>{{ 'Linked' if wallet_linked else 'Not linked' }}
+          </span>
+        </div>
+
+        <div class="meter-box" style="margin-bottom:12px">
+          <span>Linked address</span>
+          <strong class="mono" id="walletAddressText" style="font-size:0.78rem;word-break:break-all">{{ current_user.wallet_address or 'No wallet linked' }}</strong>
+        </div>
+
+        <div class="kv" style="margin-bottom:14px">
+          <div class="kv-row"><span>Signature verified</span><strong id="walletVerifiedText">{{ 'Yes' if current_user.wallet_verified else 'No' }}</strong></div>
+          <div class="kv-row"><span>Proof mode</span><strong>{{ 'Simulation (offline hash-chain)' if chain_mode == 'simulation' else 'Ethereum Sepolia' }}</strong></div>
+          <div class="kv-row"><span>On-chain authorisation</span><strong id="walletAuthState">{{ 'Authorised' if linked_authorization and linked_authorization.authorized else 'Not authorised yet' }}</strong></div>
+          {% if linked_authorization and linked_authorization.tx_hash %}
+          <div class="kv-row"><span>Authorisation tx</span><strong class="mono" style="font-size:0.66rem">{{ linked_authorization.tx_hash|hash }} {{ copy_button(linked_authorization.tx_hash, 'Copy transaction hash') }}</strong></div>
+          {% endif %}
+        </div>
+
+        <div class="banner {{ 'success' if wallet_linked else 'info' }}" id="walletBanner">
+          {{ icon('shield') }}
+          <div>
+            <strong id="walletBannerTitle">{{ 'Wallet linked' if wallet_linked else 'Link your wallet' }}</strong>
+            <span id="walletBannerText">
+              {% if wallet_linked %}
+                Signing a message proves you own this address. Personal data is never sent to the chain; only pseudonymous record proofs are.
+              {% else %}
+                Clicking link asks MetaMask to sign a free, off-chain message. No gas is spent and no transaction is created.
+              {% endif %}
+            </span>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn btn-primary btn-sm" type="button" id="walletConnectBtn">
+            {{ icon('wallet') }} {{ 'Re-link wallet' if wallet_linked else 'Connect MetaMask' }}
+          </button>
+          {% if wallet_linked %}
+          <button class="btn btn-danger btn-sm" type="button" id="walletUnlinkBtn">{{ icon('close') }} Unlink</button>
+          {% endif %}
+          <button class="btn btn-ghost btn-sm" type="button" id="walletRefreshBtn">{{ icon('refresh') }} Refresh</button>
+        </div>
+        <div id="walletError" class="field-error" style="margin-top:8px"></div>
+
+        <div class="divider"></div>
+        <p class="tiny muted">
+          <strong>How authorisation works.</strong> Linking verifies ownership. Before a wallet can sign anchoring transactions in Sepolia mode,
+          an administrator must authorise it on the AquaLedger contract from <em>Users &amp; wallets</em>.
+          In simulation mode the signing flow is fully testable offline.
+        </p>
+        {% if current_user.is_admin and chain_mode == 'sepolia' %}
+        <p class="tiny muted" style="margin-top:6px">You are an administrator: authorise resident wallets from <a href="{{ url_for('admin.users') }}">Users &amp; wallets</a>.</p>
+        {% endif %}
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Privacy model</div>
+          <div class="card-sub">What is and is not public</div>
+        </div>
+        <span class="kpi-icon teal">{{ icon('lock') }}</span>
+      </div>
+      <div class="card-body">
+        <ul class="stack-sm small muted">
+          <li class="flex">{{ icon('check', 'icon-sm') }} A random 32-byte household reference</li>
+          <li class="flex">{{ icon('check', 'icon-sm') }} Reading sequence, date and consumption</li>
+          <li class="flex">{{ icon('check', 'icon-sm') }} keccak256 record digest and anchoring address</li>
+          <li class="flex" style="color:var(--red)">{{ icon('close', 'icon-sm') }} No name, email, phone or address</li>
+          <li class="flex" style="color:var(--red)">{{ icon('close', 'icon-sm') }} No meter serial or household code</li>
+        </ul>
+        <div class="form-note" style="margin-top:12px">
+          {{ icon('info', 'icon-sm') }} Your wallet address is public on-chain. Only link a wallet you are comfortable using for public proofs.
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Session security</div>
+          <div class="card-sub">Active protections</div>
+        </div>
+        <span class="kpi-icon">{{ icon('shield') }}</span>
+      </div>
+      <div class="card-body">
+        <div class="kv">
+          <div class="kv-row"><span>Password hashing</span><strong>PBKDF2-SHA256</strong></div>
+          <div class="kv-row"><span>CSRF protection</span><strong>Enabled</strong></div>
+          <div class="kv-row"><span>Login throttling</span><strong>Enabled</strong></div>
+          <div class="kv-row"><span>Session type</span><strong>HttpOnly cookie</strong></div>
+        </div>
+        <div class="form-actions">
+          <form action="{{ url_for('auth.logout') }}" method="post">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-outline btn-sm" type="submit">{{ icon('logout') }} Sign out</button>
+          </form>
+        </div>
+      </div>
+    </article>
+  </div>
+</div>
+
+<script type="application/json" id="walletProfileData">{{ {
+  'linked': wallet_linked,
+  'address': current_user.wallet_address or '',
+  'verified': current_user.wallet_verified,
+  'mode': chain_mode
+}|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/wallet.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,215 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon, score_dial, progress_bar, empty_state %}
+{% block title %}Reports &amp; history · AquaLedger{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Insights &amp; exports</div>
+    <h1>Reports &amp; history</h1>
+    <p>Monthly consumption, cost estimates and conservation scorecards built from verified meter readings.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn-outline" href="{{ url_for('reports.export_csv', year=year, household_id=selected_household or '') }}">
+      {{ icon('download') }} Export CSV
+    </a>
+    <a class="btn btn-primary" href="{{ url_for('readings.new') }}">{{ icon('plus') }} Record reading</a>
+  </div>
+</div>
+
+<form class="card" method="get" action="{{ url_for('reports.index') }}" style="padding:14px 16px;margin-bottom:18px">
+  <div class="flex flex-wrap" style="gap:10px">
+    <select class="select" name="household_id" aria-label="Household" style="width:auto;min-width:200px">
+      <option value="">All accessible households</option>
+      {% for h in households %}
+      <option value="{{ h.id }}" {{ 'selected' if selected_household == h.id }}>{{ h.household_code }} · {{ h.name }}</option>
+      {% endfor %}
+    </select>
+    <select class="select" name="year" aria-label="Report year" style="width:auto;min-width:120px">
+      {% for y in range(current_year - 4, current_year + 1) %}
+      <option value="{{ y }}" {{ 'selected' if y == year }}>{{ y }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-outline" type="submit">{{ icon('chart') }} Run report</button>
+    <span class="small muted" style="margin-left:auto">
+      {% set selected_rows = households|selectattr('id', 'equalto', selected_household)|list if selected_household else [] %}
+      {% if selected_rows %}{{ selected_rows[0].household_code }}{% else %}{{ households|length }} household{{ '' if households|length == 1 else 's' }}{% endif %}
+      · {{ year }}
+    </span>
+  </div>
+</form>
+
+<div class="kpi-grid">
+  <article class="kpi">
+    <div class="kpi-top"><span class="kpi-label">Total consumption</span><span class="kpi-icon teal">{{ icon('droplet') }}</span></div>
+    <div class="kpi-value">{{ total_l|litres }} <small>L</small></div>
+    <div class="kpi-foot">Reported across {{ rows|selectattr('entries', 'gt', 0)|list|length }} active month{{ '' if rows|selectattr('entries', 'gt', 0)|list|length == 1 else 's' }}</div>
+  </article>
+  <article class="kpi">
+    <div class="kpi-top"><span class="kpi-label">Average per active month</span><span class="kpi-icon">{{ icon('activity') }}</span></div>
+    <div class="kpi-value">{{ avg_month_l|litres }} <small>L</small></div>
+    <div class="kpi-foot">Monthly limit {{ monthly_limit|litres }} L</div>
+  </article>
+  <article class="kpi">
+    <div class="kpi-top"><span class="kpi-label">Estimated water cost</span><span class="kpi-icon amber">{{ icon('wallet') }}</span></div>
+    <div class="kpi-value">₹{{ total_cost|money }} </div>
+    <div class="kpi-foot">At ₹{{ settings.tariff_per_kl }} per kilolitre</div>
+  </article>
+  <article class="kpi">
+    <div class="kpi-top"><span class="kpi-label">Conservation score</span><span class="kpi-icon purple">{{ icon('leaf') }}</span></div>
+    <div class="kpi-value">{{ score.score if score.score is not none else '--' }} <small>/ 100</small></div>
+    <div class="kpi-foot">
+      {% if score.score is not none %}<span class="grade">{{ score.grade }}</span> across {{ score.households }} household{{ '' if score.households == 1 else 's' }}{% else %}Add readings to calculate a score{% endif %}
+    </div>
+  </article>
+</div>
+
+<div class="grid split-2-1" style="margin-bottom:18px">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Monthly consumption vs limit</div>
+        <div class="card-sub">Report year {{ year }} · bars are measured litres, the line is the monthly limit</div>
+      </div>
+      <span class="tag">{{ icon('chart', 'icon-sm') }} Chart.js</span>
+    </div>
+    <div class="card-body">
+      <div class="chart-wrap lg"><canvas id="reportChart" aria-label="Monthly consumption versus limit chart" role="img"></canvas></div>
+      <div class="chart-legend" style="margin-top:10px">
+        <span><i class="legend-dot" style="background:#0e9488"></i> Consumption (L)</span>
+        <span><i class="legend-dot" style="background:#f59e0b"></i> Monthly limit (L)</span>
+      </div>
+    </div>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Estimated cost</div>
+        <div class="card-sub">Tariff applied to each month's consumption</div>
+      </div>
+      <span class="kpi-icon amber">{{ icon('wallet') }}</span>
+    </div>
+    <div class="card-body">
+      <div class="chart-wrap sm"><canvas id="costChart" aria-label="Estimated monthly cost chart" role="img"></canvas></div>
+      <div class="form-note" style="margin-top:12px">
+        {{ icon('info', 'icon-sm') }} Estimates use the configurable tariff of ₹{{ settings.tariff_per_kl }}/kL. Your utility bill may include fixed charges and taxes.
+      </div>
+    </div>
+  </article>
+</div>
+
+<article class="card" style="margin-bottom:18px">
+  <div class="card-head">
+    <div>
+      <div class="card-title">Monthly breakdown</div>
+      <div class="card-sub">Every month in {{ year }} with recorded readings</div>
+    </div>
+    <span class="badge badge-teal">{{ rows|selectattr('entries', 'gt', 0)|list|length }} months with data</span>
+  </div>
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Month</th>
+          <th>Total</th>
+          <th>Avg / day</th>
+          <th>Entries</th>
+          <th>Limit</th>
+          <th>Percent of limit</th>
+          <th>Est. cost</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>{{ row.month }}</td>
+          <td class="num">{{ row.total_l|litres }} L</td>
+          <td class="num">{{ row.avg_daily_l|litres(1) }} L</td>
+          <td>{{ row.entries }}</td>
+          <td class="num">{{ row.limit_l|litres }} L</td>
+          <td style="min-width:150px">
+            <div class="flex between small" style="margin-bottom:4px">
+              <span>{{ row.pct_of_limit }}%</span>
+            </div>
+            {{ progress_bar(row.pct_of_limit, 'danger' if row.pct_of_limit > 100 else ('warn' if row.pct_of_limit >= settings.alert_threshold_pct|int else '')) }}
+          </td>
+          <td class="num">₹{{ row.cost|money }}</td>
+          <td>
+            <span class="badge badge-{{ 'danger' if row.status == 'Exceeded' else ('success' if row.status == 'Within limit' else 'neutral') }}">{{ row.status }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</article>
+
+<article class="card">
+  <div class="card-head">
+    <div>
+      <div class="card-title">Conservation scorecards</div>
+      <div class="card-sub">Per-person usage compared with the {{ settings.conservation_target_lpd }} L/day target over the last 30 days</div>
+    </div>
+    <span class="badge badge-{{ 'success' if (score.score or 0) >= 80 else ('warning' if (score.score or 0) >= 60 else 'neutral') }}">
+      Overall {{ score.score if score.score is not none else '--' }}
+    </span>
+  </div>
+  <div class="card-body">
+    {% if scores %}
+    <div class="grid grid-2">
+      {% for item in scores %}
+      <div class="card" style="box-shadow:none">
+        <div class="card-body" style="padding:16px">
+          <div class="score-row">
+            {{ score_dial(item.score.score, item.score.grade) }}
+            <div class="score-meta">
+              <strong>{{ item.household.household_code }} · {{ item.household.name }}</strong>
+              <span>{{ item.score.label }}</span>
+              <span>{{ item.score.avg_daily_l|litres(0) }} L/day actual · {{ item.score.baseline_l|litres(0) }} L/day target for {{ item.household.members_count }} resident{{ '' if item.household.members_count == 1 else 's' }}</span>
+              {% if item.score.trend_pct is not none %}
+              <span class="delta {{ 'up' if item.score.trend_pct > 0 else 'down' }}" style="font-size:0.72rem;margin-top:4px;display:inline-flex">
+                {{ icon('arrow-up' if item.score.trend_pct > 0 else 'arrow-down', 'icon-sm') }} {{ item.score.trend_pct|abs }}% vs previous 30 days
+              </span>
+              {% endif %}
+            </div>
+          </div>
+          <div class="divider"></div>
+          <div class="flex between small">
+            <span class="muted">{{ item.score.recorded_days }} recorded day{{ '' if item.score.recorded_days == 1 else 's' }}</span>
+            <a class="btn-link" href="{{ url_for('households.detail', household_id=item.household.id) }}">Open household {{ icon('arrow-right', 'icon-sm') }}</a>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty">
+      <div class="empty-icon">{{ icon('leaf') }}</div>
+      <h3>No scorecards yet</h3>
+      <p>Record meter readings to calculate conservation scores for your households.</p>
+      <a class="btn btn-primary btn-sm" href="{{ url_for('readings.new') }}">{{ icon('plus') }} Record reading</a>
+    </div>
+    {% endif %}
+  </div>
+</article>
+
+<div class="form-note" style="margin-top:18px">
+  {{ icon('shield', 'icon-sm') }} <strong>Auditable exports.</strong> CSV exports include the canonical record-digest formula so a third party can recompute hashes from exported readings and compare them with Ethereum Sepolia proofs.
+</div>
+
+<script type="application/json" id="reportsData">{{ {
+  'year': year,
+  'labels': rows|map(attribute='month')|list,
+  'totals': rows|map(attribute='total_l')|map('float')|list,
+  'limits': rows|map(attribute='limit_l')|map('float')|list,
+  'costs': rows|map(attribute='cost')|map('float')|list,
+  'avg_daily': rows|map(attribute='avg_daily_l')|map('float')|list,
+  'threshold': settings.alert_threshold_pct
+}|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/reports.js') }}"></script>
+{% endblock %}

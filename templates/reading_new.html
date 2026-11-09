@@ -1,0 +1,143 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon %}
+{% block title %}Record reading · AquaLedger{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('readings.index') }}">Meter readings</a>
+  <span class="sep">/</span>
+  <span>New reading</span>
+</div>
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Manual meter entry</div>
+    <h1>Record a meter reading</h1>
+    <p>Enter the cumulative meter value in cubic metres. Consumption is calculated automatically.</p>
+  </div>
+</div>
+
+<div class="grid split-2-1">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Reading details</div>
+        <div class="card-sub">One reading per household per day</div>
+      </div>
+      <span class="badge badge-teal">{{ icon('shield') }} Hash on save</span>
+    </div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('readings.new') }}" id="readingForm" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-grid">
+          <div class="field">
+            <label for="household_id">Household <span class="required">*</span></label>
+            <select class="select" id="household_id" name="household_id" required>
+              {% for h in households %}
+              <option value="{{ h.id }}" {{ 'selected' if selected == h.id|string }}>{{ h.household_code }} · {{ h.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field">
+            <label for="reading_date">Reading date <span class="required">*</span></label>
+            <input class="input" id="reading_date" name="reading_date" type="date" required
+                   value="{{ form.get('reading_date', '') }}">
+            <span class="hint" id="dateHint">Readings must move forward in time.</span>
+          </div>
+
+          <div class="field">
+            <label for="previous_reading_m3">Previous reading</label>
+            <div class="input-group">
+              <input class="input" id="previous_reading_m3" name="previous_reading_m3" type="number" step="0.001" min="0"
+                     placeholder="0.000" value="{{ form.get('previous_reading_m3', '') }}">
+              <span class="unit">m³</span>
+            </div>
+            <span class="hint" id="previousHint">Pulled from the latest reading when available.</span>
+          </div>
+          <div class="field">
+            <label for="current_reading_m3">Current reading <span class="required">*</span></label>
+            <div class="input-group">
+              <input class="input" id="current_reading_m3" name="current_reading_m3" type="number" step="0.001" min="0"
+                     placeholder="0.000" value="{{ form.get('current_reading_m3', '') }}" required>
+              <span class="unit">m³</span>
+            </div>
+          </div>
+
+          <div class="field full">
+            <div class="banner info" id="calcPreview">
+              {{ icon('activity') }}
+              <div>
+                <strong>Calculated consumption</strong>
+                <span id="calcText">Enter the current reading to see consumption.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="reading_source">Reading source</label>
+            <select class="select" id="reading_source" name="reading_source">
+              <option value="manual" {{ 'selected' if form.get('reading_source') == 'manual' }}>Manual meter reading</option>
+              <option value="estimated" {{ 'selected' if form.get('reading_source') == 'estimated' }}>Estimated / billing estimate</option>
+            </select>
+          </div>
+          <div class="field full">
+            <label for="notes">Notes <span class="hint">(optional)</span></label>
+            <textarea class="textarea" id="notes" name="notes" maxlength="255" placeholder="e.g. Leak repaired in the garden line">{{ form.get('notes', '') }}</textarea>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" type="submit" data-loading="Saving reading...">{{ icon('check') }} Save reading</button>
+          <a class="btn btn-ghost" href="{{ url_for('readings.index') }}">Cancel</a>
+        </div>
+        <p class="hint" style="margin-top:12px">
+          {{ icon('lock', 'icon-sm') }} Saved readings cannot be edited or deleted — this protects the integrity of the meter chain and its proof.
+        </p>
+      </form>
+    </div>
+  </article>
+
+  <div class="stack">
+    <article class="card water">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Latest meter position</div>
+          <div class="card-sub" id="latestHousehold">Select a household</div>
+        </div>
+        <span class="kpi-icon teal">{{ icon('readings') }}</span>
+      </div>
+      <div class="card-body">
+        <div id="latestPanel" class="stack-sm">
+          <p class="small muted">Choose a household to load its last recorded reading.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head"><div class="card-title">How consumption is calculated</div></div>
+      <div class="card-body">
+        <div class="stack-sm small muted">
+          <p><strong class="strong">Consumption (L) = (Current − Previous) × 1,000</strong></p>
+          <p>The previous value is locked to the latest reading so the meter chain stays continuous. A reading lower than the previous value is rejected.</p>
+          <div class="form-note" style="margin-top:4px">Example: 145.320 m³ → 145.680 m³ = <strong>360 litres</strong>.</div>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head"><div class="card-title">What gets anchored</div></div>
+      <div class="card-body">
+        <div class="stack-sm small muted">
+          <p>{{ icon('check', 'icon-sm') }} Household reference, sequence and reading date</p>
+          <p>{{ icon('check', 'icon-sm') }} Consumption in millilitres and the keccak256 digest</p>
+          <p>{{ icon('lock', 'icon-sm') }} Never your name, address, email or meter ID</p>
+        </div>
+      </div>
+    </article>
+  </div>
+</div>
+
+<script type="application/json" id="readingHouseholdMeta">{{ meta|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/reading-new.js') }}"></script>
+{% endblock %}

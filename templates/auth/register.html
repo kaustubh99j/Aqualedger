@@ -1,0 +1,53 @@
+{% extends 'auth/base_auth.html' %}
+{% from '_macros.html' import icon %}
+{% block title %}Create account · AquaLedger{% endblock %}
+
+{% block auth_content %}
+<div class="auth-card-head">
+  <h2>Create your account</h2>
+  <p>Start measuring, proving and improving your household water use.</p>
+</div>
+<div class="card">
+  <form method="post" action="{{ url_for('auth.register') }}" novalidate>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-grid">
+      <div class="field full">
+        <label for="name">Full name</label>
+        <input class="input" type="text" id="name" name="name" autocomplete="name" maxlength="120" required
+               value="{{ form.get('name', '') }}" placeholder="e.g. Priya Sharma">
+      </div>
+      <div class="field">
+        <label for="email">Email address</label>
+        <input class="input" type="email" id="email" name="email" autocomplete="email" maxlength="190" required
+               value="{{ form.get('email', '') }}" placeholder="you@example.com">
+      </div>
+      <div class="field">
+        <label for="phone">Phone <span class="hint">(optional)</span></label>
+        <input class="input" type="tel" id="phone" name="phone" autocomplete="tel" maxlength="30"
+               value="{{ form.get('phone', '') }}" placeholder="+91 90000 00000">
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <div class="password-field">
+          <input class="input" type="password" id="password" name="password" autocomplete="new-password" minlength="8" required
+                 placeholder="At least 8 characters">
+          <button class="password-toggle" type="button" data-password-toggle="password" aria-label="Show password">{{ icon('eye', 'icon-sm') }}</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="confirm_password">Confirm password</label>
+        <div class="password-field">
+          <input class="input" type="password" id="confirm_password" name="confirm_password" autocomplete="new-password" minlength="8" required
+                 placeholder="Repeat password">
+          <button class="password-toggle" type="button" data-password-toggle="confirm_password" aria-label="Show password">{{ icon('eye', 'icon-sm') }}</button>
+        </div>
+      </div>
+      <div class="full hint">Use at least 8 characters with one letter and one number. Passwords are stored as salted PBKDF2 hashes.</div>
+      <div class="full">
+        <button class="btn btn-primary btn-block" type="submit" data-loading="Creating account...">{{ icon('user') }} Create account</button>
+      </div>
+    </div>
+  </form>
+</div>
+<div class="auth-switch">Already have an account? <a href="{{ url_for('auth.login') }}">Sign in</a></div>
+{% endblock %}

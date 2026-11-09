@@ -1,0 +1,223 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon, status_badge, score_dial, progress_bar, copy_button %}
+{% block title %}{{ household.household_code }} · AquaLedger{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('households.index') }}">Households</a>
+  <span class="sep">/</span>
+  <span>{{ household.household_code }}</span>
+</div>
+
+<div class="page-head">
+  <div>
+    <div class="eyebrow">{{ 'Admin view' if current_user.is_admin else 'Your household' }}</div>
+    <h1>{{ household.household_code }} · {{ household.name }}</h1>
+    <p>{{ household.address }}, {{ household.city }} · Meter <span class="mono">{{ household.meter_id }}</span></p>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn-outline" href="{{ url_for('reports.index', household_id=household.id) }}">{{ icon('chart') }} Report</a>
+    <a class="btn btn-primary" href="{{ url_for('readings.new', household_id=household.id) }}">{{ icon('plus') }} Record reading</a>
+  </div>
+</div>
+
+<div class="kpi-grid">
+  <article class="kpi">
+    <div class="kpi-top"><span class="kpi-label">This month</span><span class="kpi-icon teal">{{ icon('calendar') }}</span></div>
+    <div class="kpi-value">{{ stats.month_l|litres }} <small>L</small></div>
+    <div class="kpi-foot">{{ readings|length }} recent entries · limit {{ limits.monthly_limit_l|litres }} L</div>
+  </article>
+  <article class="kpi">
+    <div class="kpi-top"><span class="kpi-label">Avg per reading</span><span class="kpi-icon">{{ icon('activity') }}</span></div>
+    <div class="kpi-value">{{ stats.avg_l|litres(0) }} <small>L</small></div>
+    <div class="kpi-foot">Month-to-date average</div>
+  </article>
+  <article class="kpi">
+    <div class="kpi-top"><span class="kpi-label">Latest reading</span><span class="kpi-icon amber">{{ icon('readings') }}</span></div>
+    <div class="kpi-value" style="font-size:1.35rem">{{ stats.last_reading.strftime('%d %b %Y') if stats.last_reading else '--' }}</div>
+    <div class="kpi-foot">{{ latest.consumption_l|litres(0) if latest else 0 }} L on the latest entry</div>
+  </article>
+  <article class="kpi">
+    <div class="kpi-top"><span class="kpi-label">Conservation score</span><span class="kpi-icon purple">{{ icon('leaf') }}</span></div>
+    <div class="kpi-value">{{ score.score if score.score is not none else '--' }} <small>/ 100</small></div>
+    <div class="kpi-foot">{{ score.grade }} · {{ score.label }}</div>
+  </article>
+</div>
+
+<div class="grid split-2-1" style="margin-bottom:18px">
+  <div class="stack">
+    <article class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Daily consumption</div>
+          <div class="card-sub">Last 30 days · daily limit {{ limits.daily_limit_l|litres }} L</div>
+        </div>
+        <span class="badge badge-teal">{{ household.members_count }} resident{{ '' if household.members_count == 1 else 's' }}</span>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrap lg"><canvas id="houseDailyChart" aria-label="Daily consumption chart" role="img"></canvas></div>
+      </div>
+    </article>
+    <article class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Monthly consumption</div>
+          <div class="card-sub">Last 12 months</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="chart-wrap"><canvas id="houseMonthlyChart" aria-label="Monthly consumption chart" role="img"></canvas></div>
+      </div>
+    </article>
+  </div>
+
+  <div class="stack">
+    <article class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Household profile</div>
+          <div class="card-sub">Operational data (off-chain)</div>
+        </div>
+        {% if current_user.is_admin %}<a class="btn-link" href="{{ url_for('households.index') }}">Edit</a>{% endif %}
+      </div>
+      <div class="card-body">
+        <div class="score-row" style="margin-bottom:16px">
+          {{ score_dial(score.score, score.grade) }}
+          <div class="score-meta">
+            <strong>{{ score.avg_daily_l|litres(0) }} L/day</strong>
+            <span>Target {{ score.baseline_l|litres(0) }} L/day for {{ household.members_count }} resident{{ '' if household.members_count == 1 else 's' }}</span>
+            {% if score.trend_pct is not none %}
+            <span class="delta {{ 'up' if score.trend_pct > 0 else 'down' }}" style="font-size:0.72rem;margin-top:4px;display:inline-flex">
+              {{ icon('arrow-up' if score.trend_pct > 0 else 'arrow-down', 'icon-sm') }} {{ score.trend_pct|abs }}% vs previous 30 days
+            </span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="kv">
+          <div class="kv-row"><span>Owner</span><strong>{{ household.owner_name or 'Unassigned' }}</strong></div>
+          <div class="kv-row"><span>Members</span><strong>{{ household.members_count }}</strong></div>
+          <div class="kv-row"><span>Meter installed</span><strong>{{ household.meter_installed_on.strftime('%d %b %Y') if household.meter_installed_on else '--' }}</strong></div>
+          <div class="kv-row"><span>Status</span><strong>{{ household.status|title }}</strong></div>
+          <div class="kv-row"><span>Chain reference</span><strong class="mono" style="font-size:0.67rem">{{ household.chain_ref|hash }} {{ copy_button(household.chain_ref, 'Copy chain reference') }}</strong></div>
+        </div>
+        <div class="divider"></div>
+        <div class="flex between" style="margin-bottom:7px">
+          <span class="small strong">Daily limit</span><span class="small">{{ limits.daily_limit_l|litres }} L</span>
+        </div>
+        {{ progress_bar(((latest.consumption_l|float) / limits.daily_limit_l * 100) if latest and limits.daily_limit_l else 0, 'danger' if latest and latest.consumption_l > limits.daily_limit_l else ('warn' if latest and latest.consumption_l > limits.daily_limit_l * limits.alert_threshold_pct / 100 else '')) }}
+        <div class="progress-meta"><span>Latest entry {{ latest.consumption_l|litres(0) if latest else 0 }} L</span><span>{{ ('Household override' if limits.source == 'household' else 'Global setting') }}</span></div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Alerts</div>
+          <div class="card-sub">Unusual usage signals</div>
+        </div>
+        <a class="btn-link" href="{{ url_for('alerts.index') }}">All</a>
+      </div>
+      <div class="card-body">
+        {% if alerts %}
+        <div class="stack-sm">
+          {% for a in alerts %}
+          <div class="alert-card {{ a.severity }}" style="padding:10px 12px">
+            <span class="alert-icon" style="width:28px;height:28px">{{ icon('alert' if a.severity != 'info' else 'info', 'icon-sm') }}</span>
+            <div class="alert-content">
+              <strong style="font-size:0.74rem">{{ a.title }}</strong>
+              <span class="tiny muted">{{ a.created_at|ago }}</span>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="small muted center" style="padding:16px 0">No alerts for this household.</p>
+        {% endif %}
+      </div>
+    </article>
+
+    {% if current_user.is_admin %}
+    <article class="card">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Household limits</div>
+          <div class="card-sub">Override the global limits for this meter</div>
+        </div>
+        {% if limits.source == 'household' %}
+        <form method="post" action="{{ url_for('households.reset_limits', household_id=household.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-ghost btn-sm" type="submit" data-confirm="Reset this household to global limits?">Reset</button>
+        </form>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('households.update_limits', household_id=household.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="return_to" value="{{ url_for('households.detail', household_id=household.id) }}">
+          <div class="form-grid">
+            <div class="field">
+              <label for="daily_limit">Daily limit</label>
+              <div class="input-group"><input class="input" id="daily_limit" name="daily_limit_l" type="number" min="1" step="1" value="{{ limits.daily_limit_l|round(0)|int }}" required><span class="unit">L</span></div>
+            </div>
+            <div class="field">
+              <label for="monthly_limit">Monthly limit</label>
+              <div class="input-group"><input class="input" id="monthly_limit" name="monthly_limit_l" type="number" min="1" step="1" value="{{ limits.monthly_limit_l|round(0)|int }}" required><span class="unit">L</span></div>
+            </div>
+            <div class="field full">
+              <label for="threshold">Alert threshold</label>
+              <div class="input-group"><input class="input" id="threshold" name="alert_threshold_pct" type="number" min="10" max="100" value="{{ limits.alert_threshold_pct }}" required><span class="unit">%</span></div>
+            </div>
+          </div>
+          <div class="form-actions"><button class="btn btn-primary btn-sm" type="submit" data-loading="Saving...">{{ icon('check') }} Save limits</button></div>
+        </form>
+      </div>
+    </article>
+    {% endif %}
+  </div>
+</div>
+
+<article class="card">
+  <div class="card-head">
+    <div>
+      <div class="card-title">Reading history</div>
+      <div class="card-sub">Latest 20 meter entries for this household</div>
+    </div>
+    <a class="btn-link" href="{{ url_for('readings.index', household_id=household.id) }}">Open full list</a>
+  </div>
+  <div class="table-wrap">
+    {% if readings %}
+    <table class="data">
+      <thead><tr><th>Date</th><th>Previous (m³)</th><th>Current (m³)</th><th>Consumption</th><th>Status</th><th>Proof</th><th></th></tr></thead>
+      <tbody>
+        {% for r in readings %}
+        <tr>
+          <td>{{ r.reading_date.strftime('%d %b %Y') }}</td>
+          <td class="mono">{{ '%.3f'|format(r.previous_reading_m3) }}</td>
+          <td class="mono">{{ '%.3f'|format(r.current_reading_m3) }}</td>
+          <td class="num">{{ r.consumption_l|litres(0) }} L</td>
+          <td>{{ status_badge(r.status) }}</td>
+          <td class="mono">{{ r.chain_tx_hash|hash }}</td>
+          <td class="right"><a class="btn btn-ghost btn-sm" href="{{ url_for('readings.detail', reading_id=r.id) }}">Details {{ icon('chevron', 'icon-sm') }}</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty"><div class="empty-icon">{{ icon('readings') }}</div><h3>No readings</h3><p>Record the first meter reading for this household.</p><a class="btn btn-primary btn-sm" href="{{ url_for('readings.new', household_id=household.id) }}">{{ icon('plus') }} Record reading</a></div>
+    {% endif %}
+  </div>
+</article>
+
+<script type="application/json" id="householdChartData">{{ {
+  'daily_labels': daily.labels,
+  'daily_values': daily.values,
+  'daily_limit': limits.daily_limit_l,
+  'monthly_labels': monthly.labels,
+  'monthly_values': monthly.values,
+  'monthly_limit': limits.monthly_limit_l
+}|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/household-detail.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% macro icon(name, cls='') -%}
+<svg class="icon {{ cls }}" aria-hidden="true"><use href="#i-{{ name }}"></use></svg>
+{%- endmacro %}
+
+{% macro nav_link(endpoint, label, icon_name, badge=None, muted_badge=False) -%}
+{% set section = endpoint.split('.')[0] %}
+{% set active = request.endpoint and request.endpoint.split('.')[0] == section %}
+<a class="nav-link {{ 'active' if active }}" href="{{ url_for(endpoint) }}">
+  {{ icon(icon_name) }}
+  <span>{{ label }}</span>
+  {% if badge is not none and badge > 0 %}<span class="nav-badge {{ 'muted' if muted_badge }}">{{ badge }}</span>{% endif %}
+</a>
+{%- endmacro %}
+
+{% macro status_badge(status) -%}
+{% set label = {'anchored':'Anchored','pending':'Pending','failed':'Failed','tampered':'Tampered'}.get(status, status|title) %}
+<span class="badge badge-{{ status }}"><span class="dot"></span>{{ label }}</span>
+{%- endmacro %}
+
+{% macro severity_badge(severity) -%}
+<span class="badge badge-{{ severity }}">{{ severity|title }}</span>
+{%- endmacro %}
+
+{% macro score_dial(score, grade='', size='') -%}
+<div class="score-dial {{ size }}" style="--score: {{ score if score is not none else 0 }}">
+  <div class="score-dial-inner">
+    <strong>{{ score if score is not none else '--' }}</strong>
+    <span>{{ grade or 'score' }}</span>
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro progress_bar(percent, tone='') -%}
+<div class="progress"><div class="progress-bar {{ tone }}" style="width: {{ [percent|float, 100]|min }}%"></div></div>
+{%- endmacro %}
+
+{% macro pagination(p, endpoint=None) -%}
+{% if p.pages and p.pages > 1 %}
+{% set args = request.args.to_dict() %}
+<div class="pagination">
+  {% set _ = args.update({'page': p.page - 1}) %}
+  <a class="{{ 'disabled' if p.page <= 1 }}" href="{{ url_for(endpoint or request.endpoint, **args) }}">‹</a>
+  {% for n in range([1, p.page - 2]|max, [p.pages, p.page + 2]|min + 1) %}
+    {% set _ = args.update({'page': n}) %}
+    {% if n == p.page %}<span class="current">{{ n }}</span>{% else %}<a href="{{ url_for(endpoint or request.endpoint, **args) }}">{{ n }}</a>{% endif %}
+  {% endfor %}
+  {% set _ = args.update({'page': p.page + 1}) %}
+  <a class="{{ 'disabled' if p.page >= p.pages }}" href="{{ url_for(endpoint or request.endpoint, **args) }}">›</a>
+</div>
+{% endif %}
+{%- endmacro %}
+
+{% macro empty_state(icon_name, title, text) -%}
+<div class="empty">
+  <div class="empty-icon">{{ icon(icon_name, 'icon-lg') }}</div>
+  <h3>{{ title }}</h3>
+  <p>{{ text }}</p>
+  {{ caller() if caller is defined and caller }}
+</div>
+{%- endmacro %}
+
+{% macro copy_button(value, label='Copy') -%}
+<button type="button" class="copy-btn tooltip" data-copy="{{ value }}" data-tip="{{ label }}" aria-label="{{ label }}">{{ icon('copy', 'icon-sm') }}</button>
+{%- endmacro %}

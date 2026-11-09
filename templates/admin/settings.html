@@ -1,0 +1,205 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon %}
+{% block title %}Water limits &amp; settings · AquaLedger{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Administration</div>
+    <h1>Water limits &amp; settings</h1>
+    <p>Global defaults apply to every household unless a household-specific override exists.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn-outline" href="{{ url_for('households.index') }}">{{ icon('home') }} Households</a>
+    <a class="btn btn-primary" href="{{ url_for('admin.audit_log') }}">{{ icon('file') }} Audit log</a>
+  </div>
+</div>
+
+<div class="grid split-1-2" style="margin-bottom:18px">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Global limits &amp; rules</div>
+        <div class="card-sub">Applies to households without an override</div>
+      </div>
+      <span class="kpi-icon teal">{{ icon('settings') }}</span>
+    </div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('admin.settings') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="stack">
+          <div class="field">
+            <label for="daily_limit_l">Daily limit per household</label>
+            <div class="input-group">
+              <input class="input" id="daily_limit_l" name="daily_limit_l" type="number" min="10" max="100000" step="1" required
+                     value="{{ settings.daily_limit_l|float|round(0)|int }}">
+              <span class="unit">L</span>
+            </div>
+            <span class="hint">A critical alert is raised when a single reading exceeds this value.</span>
+          </div>
+          <div class="field">
+            <label for="monthly_limit_l">Monthly limit per household</label>
+            <div class="input-group">
+              <input class="input" id="monthly_limit_l" name="monthly_limit_l" type="number" min="100" max="3000000" step="1" required
+                     value="{{ settings.monthly_limit_l|float|round(0)|int }}">
+              <span class="unit">L</span>
+            </div>
+          </div>
+          <div class="field">
+            <label for="alert_threshold_pct">Alert threshold</label>
+            <div class="input-group">
+              <input class="input" id="alert_threshold_pct" name="alert_threshold_pct" type="number" min="10" max="100" step="1" required
+                     value="{{ settings.alert_threshold_pct|int }}">
+              <span class="unit">%</span>
+            </div>
+            <span class="hint">Warn when usage crosses this percentage of a limit (10–100%).</span>
+          </div>
+          <div class="field">
+            <label for="conservation_target_lpd">Conservation target per person</label>
+            <div class="input-group">
+              <input class="input" id="conservation_target_lpd" name="conservation_target_lpd" type="number" min="10" max="1000" step="1" required
+                     value="{{ settings.conservation_target_lpd|float|round(0)|int }}">
+              <span class="unit">L/day</span>
+            </div>
+            <span class="hint">Used to calculate the conservation score. The default reference is 135 L/person/day.</span>
+          </div>
+          <div class="field">
+            <label for="tariff_per_kl">Water tariff</label>
+            <div class="input-group">
+              <input class="input" id="tariff_per_kl" name="tariff_per_kl" type="number" min="0" max="10000" step="0.01" required
+                     value="{{ settings.tariff_per_kl|float }}">
+              <span class="unit">₹/kL</span>
+            </div>
+            <span class="hint">Used only for estimated cost in reports.</span>
+          </div>
+          <label class="checkbox">
+            <input type="checkbox" name="auto_anchor" value="1" {{ 'checked' if settings.auto_anchor|string == '1' }}>
+            <span><strong>Automatically anchor new readings</strong><br><span class="hint">Simulation mode anchors instantly; Sepolia mode queues a background transaction signed by the recorder wallet.</span></span>
+          </label>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-primary" type="submit" data-loading="Saving...">{{ icon('check') }} Save global settings</button>
+        </div>
+      </form>
+    </div>
+  </article>
+
+  <div class="stack">
+    <article class="card">
+      <div class="card-head">
+        <div><div class="card-title">How limits are resolved</div><div class="card-sub">Precedence order</div></div>
+        <span class="kpi-icon purple">{{ icon('shield') }}</span>
+      </div>
+      <div class="card-body">
+        <div class="list">
+          <div class="list-row">
+            <span class="list-icon">1</span>
+            <div class="list-main"><strong>Household override</strong><span>Daily, monthly and threshold values set on the household page.</span></div>
+          </div>
+          <div class="list-row">
+            <span class="list-icon">2</span>
+            <div class="list-main"><strong>Global settings</strong><span>The defaults configured on this page.</span></div>
+          </div>
+          <div class="list-row">
+            <span class="list-icon">3</span>
+            <div class="list-main"><strong>Application defaults</strong><span>Used only if a setting row is missing.</span></div>
+          </div>
+        </div>
+        <div class="form-note" style="margin-top:14px">
+          {{ icon('info', 'icon-sm') }} Changing limits never rewrites existing readings or proofs. Alerts are evaluated against the limits in force when a reading is saved.
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head">
+        <div><div class="card-title">Integration status</div><div class="card-sub">Environment-driven behaviour</div></div>
+        <span class="kpi-icon">{{ icon('database') }}</span>
+      </div>
+      <div class="card-body">
+        <div class="kv">
+          <div class="kv-row"><span>Proof mode</span><strong>{{ chain_mode }}</strong></div>
+          <div class="kv-row"><span>Auto anchoring</span><strong>{{ 'Enabled' if settings.auto_anchor|string == '1' else 'Disabled' }}</strong></div>
+          <div class="kv-row"><span>Tariff</span><strong>₹{{ settings.tariff_per_kl|float }}/kL</strong></div>
+          <div class="kv-row"><span>Alert threshold</span><strong>{{ settings.alert_threshold_pct|int }}%</strong></div>
+        </div>
+        <div class="form-actions">
+          <a class="btn btn-outline btn-sm" href="{{ url_for('blockchain.index') }}">{{ icon('chain') }} Chain status</a>
+        </div>
+      </div>
+    </article>
+  </div>
+</div>
+
+<article class="card" style="margin-bottom:18px">
+  <div class="card-head">
+    <div>
+      <div class="card-title">Household-specific overrides</div>
+      <div class="card-sub">{{ overrides|length }} override{{ '' if overrides|length == 1 else 's' }} · edit from the household page</div>
+    </div>
+    <span class="badge badge-teal">{{ overrides|length }} active</span>
+  </div>
+  <div class="table-wrap">
+    {% if overrides %}
+    <table class="data">
+      <thead><tr><th>Household</th><th>Daily limit</th><th>Monthly limit</th><th>Alert threshold</th><th>Updated</th><th></th></tr></thead>
+      <tbody>
+        {% for row in overrides %}
+        <tr>
+          <td><a href="{{ url_for('households.detail', household_id=row.household_id) }}">{{ row.household_code }}</a> <span class="muted small">{{ row.name }}</span></td>
+          <td class="num">{{ row.daily_limit_l|litres }} L</td>
+          <td class="num">{{ row.monthly_limit_l|litres }} L</td>
+          <td>{{ row.alert_threshold_pct }}%</td>
+          <td class="small muted">{{ row.updated_at|ago }}</td>
+          <td class="right"><a class="btn btn-ghost btn-sm" href="{{ url_for('households.detail', household_id=row.household_id) }}">Edit {{ icon('chevron', 'icon-sm') }}</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty" style="padding:30px">
+      <div class="empty-icon">{{ icon('settings') }}</div>
+      <h3>No household overrides</h3>
+      <p>Every household currently uses the global limits. Add an override from a household page when a specific property needs different thresholds.</p>
+      <a class="btn btn-outline btn-sm" href="{{ url_for('households.index') }}">{{ icon('home') }} Open households</a>
+    </div>
+    {% endif %}
+  </div>
+</article>
+
+<article class="card">
+  <div class="card-head">
+    <div>
+      <div class="card-title">All households</div>
+      <div class="card-sub">Which limit source applies to each property</div>
+    </div>
+  </div>
+  <div class="table-wrap">
+    {% if households %}
+    <table class="data">
+      <thead><tr><th>Household</th><th>Residents</th><th>Readings</th><th>Limit source</th><th></th></tr></thead>
+      <tbody>
+        {% set override_ids = overrides|map(attribute='household_id')|list %}
+        {% for h in households %}
+        <tr>
+          <td><span class="badge badge-teal">{{ h.household_code }}</span> {{ h.name }}</td>
+          <td>{{ h.members_count }}</td>
+          <td>{{ h.readings }}</td>
+          <td>
+            {% if h.id in override_ids %}
+            <span class="badge badge-warning">Household override</span>
+            {% else %}
+            <span class="badge badge-neutral">Global setting</span>
+            {% endif %}
+          </td>
+          <td class="right"><a class="btn btn-ghost btn-sm" href="{{ url_for('households.detail', household_id=h.id) }}">Manage {{ icon('chevron', 'icon-sm') }}</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty" style="padding:30px"><div class="empty-icon">{{ icon('home') }}</div><h3>No households</h3><p>Add a household before configuring per-property limits.</p></div>
+    {% endif %}
+  </div>
+</article>
+{% endblock %}

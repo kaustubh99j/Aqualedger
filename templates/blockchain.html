@@ -1,0 +1,204 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon, status_badge, copy_button %}
+{% block title %}Blockchain proofs · AquaLedger{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Proof explorer</div>
+    <h1>Blockchain proofs</h1>
+    <p>Every anchored reading is a permanent, verifiable commitment — without any personal data on-chain.</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-outline" type="button" id="refreshChainBtn">{{ icon('refresh') }} Refresh chain</button>
+    <a class="btn btn-primary" href="{{ url_for('blockchain.audit_page') }}">{{ icon('shield') }} Integrity audit</a>
+  </div>
+</div>
+
+{% if status.mode == 'simulation' %}
+<div class="banner warn" style="margin-bottom:18px">
+  {{ icon('info') }}
+  <div>
+    <strong>Simulation mode is active</strong>
+    Records are anchored to a deterministic keccak256 hash-chain in MySQL so the application can be evaluated offline.
+    Deploy <span class="mono">contracts/AquaLedger.sol</span> to Sepolia via Remix, then set <span class="mono">BLOCKCHAIN_MODE=sepolia</span>,
+    <span class="mono">CONTRACT_ADDRESS</span> and <span class="mono">RECORDER_PRIVATE_KEY</span> in <span class="mono">.env</span>.
+  </div>
+</div>
+{% endif %}
+{% if status.error %}
+<div class="banner danger" style="margin-bottom:18px">
+  {{ icon('alert') }}
+  <div><strong>Chain connection problem</strong> {{ status.error }}</div>
+</div>
+{% endif %}
+<div class="banner danger" id="chainErrorBanner" style="display:none;margin-bottom:18px">
+  {{ icon('alert') }}
+  <div><strong>Chain connection problem</strong> <span id="chainErrorText"></span></div>
+</div>
+
+<article class="card" style="margin-bottom:18px;background:linear-gradient(135deg,#042b3a,#063f50);border-color:#0b4658;color:#dff6fa">
+  <div class="card-body" style="padding:22px">
+    <div class="flex between flex-wrap" style="gap:18px;align-items:flex-start">
+      <div>
+        <div class="flex" style="gap:8px;margin-bottom:7px">
+          <span class="chain-dot {{ 'sim' if status.mode == 'simulation' }}"></span>
+          <span style="font-size:0.7rem;letter-spacing:0.12em;text-transform:uppercase;color:#7fd9e3;font-weight:700">
+            {{ 'Simulation ledger' if status.mode == 'simulation' else 'Ethereum Sepolia testnet' }}
+          </span>
+        </div>
+        <h2 style="color:#fff;font-size:1.45rem">Chain status</h2>
+        <p style="color:#9ecbd4;font-size:0.8rem;margin-top:3px">Live status from Web3.py · contract and recorder information</p>
+      </div>
+      <span class="badge {{ 'badge-success' if status.connected else 'badge-danger' }}" id="chainConnectBadge" style="background:rgba(255,255,255,.1);color:{{ '#86efac' if status.connected else '#fca5a5' }}">
+        <span class="dot"></span><span id="chainConnectText">{{ 'Connected' if status.connected else 'Disconnected' }}</span>
+      </span>
+    </div>
+    <div class="grid grid-4" style="margin-top:20px;gap:12px">
+      <div class="meter-box" style="background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.1);color:#e6f9fc">
+        <span style="color:#7fb7c2">Chain ID</span>
+        <strong style="color:#fff;font-size:1rem" id="chainIdValue">{{ status.chain_id }}</strong>
+      </div>
+      <div class="meter-box" style="background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.1);color:#e6f9fc">
+        <span style="color:#7fb7c2">Latest block</span>
+        <strong style="color:#fff;font-size:1rem" id="chainBlockValue">{{ status.block_number or '--' }}</strong>
+      </div>
+      <div class="meter-box" style="background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.1);color:#e6f9fc">
+        <span style="color:#7fb7c2">Contract records</span>
+        <strong style="color:#fff;font-size:1rem" id="chainRecordValue">{{ status.record_count if status.record_count is not none else '--' }}</strong>
+      </div>
+      <div class="meter-box" style="background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.1);color:#e6f9fc">
+        <span style="color:#7fb7c2">Recorder balance</span>
+        <strong style="color:#fff;font-size:1rem" id="chainBalanceValue">{{ (status.balance_eth|string + ' ETH') if status.balance_eth is not none else '--' }}</strong>
+      </div>
+    </div>
+    <div class="grid grid-3" style="margin-top:16px;gap:16px">
+      <div>
+        <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;color:#7fb7c2;font-weight:700;margin-bottom:4px">Contract</div>
+        <div class="mono" style="font-size:0.7rem;word-break:break-all;color:#c9edf3">{{ status.contract_address or 'Not configured' }}</div>
+      </div>
+      <div>
+        <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;color:#7fb7c2;font-weight:700;margin-bottom:4px">Recorder wallet</div>
+        <div class="mono" style="font-size:0.7rem;word-break:break-all;color:#c9edf3">{{ status.recorder_address or 'Key not configured' }}</div>
+      </div>
+      <div>
+        <div style="font-size:0.62rem;text-transform:uppercase;letter-spacing:0.1em;color:#7fb7c2;font-weight:700;margin-bottom:4px">Explorer</div>
+        {% if status.explorer and status.mode == 'sepolia' %}
+        <a href="{{ status.explorer }}/address/{{ status.contract_address }}" target="_blank" rel="noopener" style="color:#8be3ed;font-size:0.74rem">Open on Etherscan {{ icon('external', 'icon-sm') }}</a>
+        {% else %}
+        <span style="color:#8db9c3;font-size:0.74rem">Local proof ledger</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</article>
+
+<div class="kpi-grid">
+  <article class="kpi"><div class="kpi-top"><span class="kpi-label">Total readings</span><span class="kpi-icon">{{ icon('readings') }}</span></div><div class="kpi-value">{{ summary.total }}</div><div class="kpi-foot">Across accessible households</div></article>
+  <article class="kpi"><div class="kpi-top"><span class="kpi-label">Anchored proofs</span><span class="kpi-icon teal">{{ icon('shield') }}</span></div><div class="kpi-value">{{ summary.anchored }}</div><div class="kpi-foot">Verified on-chain or hash-chain</div></article>
+  <article class="kpi"><div class="kpi-top"><span class="kpi-label">Pending / failed</span><span class="kpi-icon amber">{{ icon('clock') }}</span></div><div class="kpi-value">{{ summary.pending }} <small>/ {{ summary.failed }}</small></div><div class="kpi-foot">Waiting for or failed anchoring</div></article>
+  <article class="kpi"><div class="kpi-top"><span class="kpi-label">Integrity failures</span><span class="kpi-icon red">{{ icon('alert') }}</span></div><div class="kpi-value">{{ summary.tampered }}</div><div class="kpi-foot">{{ audit.summary.tampered }} detected in latest audit</div></article>
+</div>
+
+<div class="grid split-2-1" style="margin-bottom:18px">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Recent anchoring transactions</div>
+        <div class="card-sub">Latest 25 attempts, including simulation-mode proofs</div>
+      </div>
+      <a class="btn-link" href="{{ url_for('blockchain.audit_page') }}">Audit records</a>
+    </div>
+    <div class="table-wrap">
+      {% if transactions %}
+      <table class="data">
+        <thead><tr><th>When</th><th>Household</th><th>Reading</th><th>Transaction</th><th>Mode</th><th>Status</th><th>Block</th></tr></thead>
+        <tbody>
+          {% for t in transactions %}
+          <tr>
+            <td class="small muted">{{ t.created_at|ago }}</td>
+            <td><a href="{{ url_for('households.detail', household_id=t.household_id) }}">{{ t.household_code }}</a></td>
+            <td><a href="{{ url_for('readings.detail', reading_id=t.reading_id) }}">{{ t.reading_date.strftime('%d %b %Y') }}</a></td>
+            <td class="mono">
+              {% if t.tx_hash and t.chain_mode == 'sepolia' %}
+                <a href="{{ config.EXPLORER_BASE_URL }}/tx/{{ t.tx_hash }}" target="_blank" rel="noopener">{{ t.tx_hash|hash }}</a>
+              {% else %}
+                {{ t.tx_hash|hash }}
+              {% endif %}
+            </td>
+            <td><span class="tag">{{ 'Sepolia' if t.chain_mode == 'sepolia' else 'Simulation' }}</span></td>
+            <td><span class="badge badge-{{ {'confirmed':'success','pending':'warning','submitted':'info','failed':'danger'}.get(t.status, 'neutral') }}">{{ t.status|title }}</span></td>
+            <td class="mono">{{ t.block_number or '--' }}</td>
+          </tr>
+          {% if t.error_message %}
+          <tr><td colspan="7"><div class="field-error" style="padding:2px 0">{{ t.error_message }}</div></td></tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty">
+        <div class="empty-icon">{{ icon('chain') }}</div>
+        <h3>No anchoring attempts yet</h3>
+        <p>Record a meter reading and its proof transaction will appear here.</p>
+        <a class="btn btn-primary btn-sm" href="{{ url_for('readings.new') }}">{{ icon('plus') }} Record reading</a>
+      </div>
+      {% endif %}
+    </div>
+  </article>
+
+  <div class="stack">
+    <article class="card">
+      <div class="card-head">
+        <div><div class="card-title">Latest integrity scan</div><div class="card-sub">Digest recomputation over 100 records</div></div>
+        <span class="badge badge-{{ 'success' if audit.summary.tampered == 0 else 'danger' }}">{{ 'Healthy' if audit.summary.tampered == 0 else 'Issues' }}</span>
+      </div>
+      <div class="card-body">
+        <div class="kv">
+          <div class="kv-row"><span>Records checked</span><strong>{{ audit.summary.total }}</strong></div>
+          <div class="kv-row"><span>Digest matches</span><strong style="color:var(--green)">{{ audit.summary.valid }}</strong></div>
+          <div class="kv-row"><span>Tampered</span><strong style="color:{{ 'var(--red)' if audit.summary.tampered else 'var(--muted)' }}">{{ audit.summary.tampered }}</strong></div>
+          <div class="kv-row"><span>Awaiting proof</span><strong>{{ audit.summary.pending }}</strong></div>
+        </div>
+        <div class="form-actions">
+          <a class="btn btn-outline btn-sm" href="{{ url_for('blockchain.audit_page') }}">{{ icon('shield') }} Open full audit</a>
+          {% if current_user.is_admin %}
+          <form method="post" action="{{ url_for('admin.integrity_audit') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-ghost btn-sm" type="submit" data-loading="Auditing...">{{ icon('refresh') }} Scan &amp; flag</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head"><div><div class="card-title">Privacy model</div><div class="card-sub">What the chain can and cannot see</div></div><span class="kpi-icon teal">{{ icon('lock') }}</span></div>
+      <div class="card-body">
+        <ul class="stack-sm small muted">
+          <li class="flex">{{ icon('check', 'icon-sm') }} Random household reference</li>
+          <li class="flex">{{ icon('check', 'icon-sm') }} Reading sequence, date and consumption</li>
+          <li class="flex">{{ icon('check', 'icon-sm') }} keccak256 digest and anchoring address</li>
+          <li class="flex" style="color:var(--red)">{{ icon('close', 'icon-sm') }} No name, email, phone or address</li>
+          <li class="flex" style="color:var(--red)">{{ icon('close', 'icon-sm') }} No meter serial or exact household code</li>
+        </ul>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head"><div><div class="card-title">Contract</div><div class="card-sub">AquaLedger.sol · Solidity 0.8.24</div></div><span class="kpi-icon purple">{{ icon('file') }}</span></div>
+      <div class="card-body">
+        <div class="kv">
+          <div class="kv-row"><span>Network</span><strong>{{ status.chain_name }}</strong></div>
+          <div class="kv-row"><span>Mode</span><strong>{{ status.mode }}</strong></div>
+          <div class="kv-row"><span>Address</span><strong class="mono" style="font-size:0.66rem">{{ status.contract_address or '--' }}</strong></div>
+        </div>
+      </div>
+    </article>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/blockchain.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,197 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon, status_badge, copy_button %}
+{% block title %}Integrity audit · AquaLedger{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('blockchain.index') }}">Blockchain proofs</a>
+  <span class="sep">/</span>
+  <span>Integrity audit</span>
+</div>
+
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Tamper evidence</div>
+    <h1>Integrity audit</h1>
+    <p>Recompute the canonical keccak256 digest for each record and compare it with the stored digest{% if verified_on_chain %} and the on-chain proof{% endif %}.</p>
+  </div>
+  <div class="page-actions">
+    {% if mode == 'sepolia' %}
+    <a class="btn btn-{{ 'ghost' if verified_on_chain else 'outline' }}" href="{{ url_for('blockchain.audit_page') if verified_on_chain else url_for('blockchain.audit_page', onchain='1') }}">
+      {{ icon('chain') }} {{ 'Database-only check' if verified_on_chain else 'Verify on-chain (25 records)' }}
+    </a>
+    {% endif %}
+    {% if current_user.is_admin %}
+    <form method="post" action="{{ url_for('admin.integrity_audit') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-primary" type="submit" data-loading="Auditing...">{{ icon('shield') }} Scan &amp; flag tampering</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{% if mode == 'simulation' %}
+<div class="banner warn" style="margin-bottom:18px">
+  {{ icon('info') }}
+  <div>
+    <strong>Simulation mode</strong> Digest checks run against the local keccak hash-chain. The chain-link audit below also verifies every simulated block's previous-hash pointer and transaction digest.
+  </div>
+</div>
+{% elif verified_on_chain %}
+<div class="banner info" style="margin-bottom:18px">
+  {{ icon('chain') }}
+  <div>
+    <strong>On-chain verification enabled</strong> The latest 25 anchored records were checked against the AquaLedger contract. This performs multiple Sepolia RPC calls, so it is intentionally limited.
+  </div>
+</div>
+{% else %}
+<div class="banner info" style="margin-bottom:18px">
+  {{ icon('info') }}
+  <div>
+    <strong>Database digest check</strong> Every listed record is re-hashed from its current MySQL values. Use <em>Verify on-chain</em> to compare anchored proofs against Sepolia.
+  </div>
+</div>
+{% endif %}
+
+<div class="kpi-grid">
+  <article class="kpi">
+    <div class="kpi-top"><span class="kpi-label">Records checked</span><span class="kpi-icon">{{ icon('readings') }}</span></div>
+    <div class="kpi-value">{{ audit.summary.total }}</div>
+    <div class="kpi-foot">{{ 'On-chain + database' if verified_on_chain else 'Database digest recomputation' }}</div>
+  </article>
+  <article class="kpi">
+    <div class="kpi-top"><span class="kpi-label">Valid records</span><span class="kpi-icon teal">{{ icon('check-circle') }}</span></div>
+    <div class="kpi-value">{{ audit.summary.valid }}</div>
+    <div class="kpi-foot">Stored digest matches recomputed digest</div>
+  </article>
+  <article class="kpi">
+    <div class="kpi-top"><span class="kpi-label">Tampered</span><span class="kpi-icon red">{{ icon('alert') }}</span></div>
+    <div class="kpi-value">{{ audit.summary.tampered }}</div>
+    <div class="kpi-foot">{{ 'Flagged for review' if audit.summary.tampered else 'No integrity failures detected' }}</div>
+  </article>
+  <article class="kpi">
+    <div class="kpi-top"><span class="kpi-label">Awaiting proof</span><span class="kpi-icon amber">{{ icon('clock') }}</span></div>
+    <div class="kpi-value">{{ audit.summary.pending }}</div>
+    <div class="kpi-foot">Pending or failed anchoring</div>
+  </article>
+</div>
+
+{% if simulation_chain %}
+<div class="grid split-2-1" style="margin-bottom:18px">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Simulated hash-chain integrity</div>
+        <div class="card-sub">Previous-hash links and transaction digests across {{ simulation_chain.blocks }} block{{ '' if simulation_chain.blocks == 1 else 's' }}</div>
+      </div>
+      <span class="badge badge-{{ 'success' if simulation_chain.valid else 'danger' }}"><span class="dot"></span>{{ 'Chain valid' if simulation_chain.valid else 'Chain broken' }}</span>
+    </div>
+    <div class="card-body">
+      <div class="kv">
+        <div class="kv-row"><span>Blocks audited</span><strong>{{ simulation_chain.blocks }}</strong></div>
+        <div class="kv-row"><span>Broken links</span><strong style="color:{{ 'var(--red)' if simulation_chain.issues else 'var(--green)' }}">{{ simulation_chain.issues|length }}</strong></div>
+        <div class="kv-row"><span>Verification</span><strong>{{ 'Passed' if simulation_chain.valid else 'Failed' }}</strong></div>
+      </div>
+      {% if simulation_chain.issues %}
+      <div class="divider"></div>
+      <div class="stack-sm">
+        {% for issue in simulation_chain.issues[:8] %}
+        <div class="alert-card critical" style="padding:9px 11px">
+          <span class="alert-icon" style="width:26px;height:26px">{{ icon('alert', 'icon-sm') }}</span>
+          <div class="alert-content">
+            <strong style="font-size:0.74rem">Block {{ issue.block }} · reading #{{ issue.reading_id }}</strong>
+            <p style="font-size:0.7rem">{{ issue.issue }}</p>
+          </div>
+        </div>
+        {% endfor %}
+        {% if simulation_chain.issues|length > 8 %}<p class="tiny muted">…and {{ simulation_chain.issues|length - 8 }} more issue(s).</p>{% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <div><div class="card-title">What is verified</div><div class="card-sub">Simulation proof model</div></div>
+      <span class="kpi-icon purple">{{ icon('chain') }}</span>
+    </div>
+    <div class="card-body">
+      <ul class="stack-sm small muted">
+        <li class="flex">{{ icon('check', 'icon-sm') }} Each block points to the previous block's digest</li>
+        <li class="flex">{{ icon('check', 'icon-sm') }} Each transaction digest is recomputed from the block seed</li>
+        <li class="flex">{{ icon('check', 'icon-sm') }} Each anchored digest still matches the current reading</li>
+        <li class="flex">{{ icon('check', 'icon-sm') }} The chain is append-only and deterministic</li>
+      </ul>
+      <div class="form-note" style="margin-top:12px">
+        {{ icon('info', 'icon-sm') }} Simulation mode is an offline evaluation fallback. Deploy the contract to Sepolia for public, independent verification.
+      </div>
+    </div>
+  </article>
+</div>
+{% endif %}
+
+<article class="card">
+  <div class="card-head">
+    <div>
+      <div class="card-title">Audited records</div>
+      <div class="card-sub">Newest {{ audit.readings|length }} record{{ '' if audit.readings|length == 1 else 's' }}{% if verified_on_chain %} · on-chain results included{% endif %}</div>
+    </div>
+    <span class="badge badge-{{ 'success' if audit.summary.tampered == 0 else 'danger' }}">{{ 'Healthy' if audit.summary.tampered == 0 else 'Review needed' }}</span>
+  </div>
+  <div class="table-wrap">
+    {% if audit.readings %}
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Reading</th>
+          <th>Household</th>
+          <th>Consumption</th>
+          <th>Stored digest</th>
+          <th>Database</th>
+          <th>On-chain</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in audit.readings %}
+        <tr>
+          <td><a href="{{ url_for('readings.detail', reading_id=row.id) }}">#{{ row.id }}</a><br><span class="tiny muted">{{ row.reading_date.strftime('%d %b %Y') }}</span></td>
+          <td><a href="{{ url_for('households.detail', household_id=row.household_id) }}">{{ row.household_code }}</a><br><span class="tiny muted">{{ row.household_name }}</span></td>
+          <td class="num">{{ row.consumption_l|litres }} L</td>
+          <td>
+            <span class="mono tiny">{{ row.stored_hash|hash }}</span> {{ copy_button(row.stored_hash, 'Copy stored digest') }}
+          </td>
+          <td>
+            <span class="badge badge-{{ 'success' if row.db_match else 'danger' }}"><span class="dot"></span>{{ 'Match' if row.db_match else 'Mismatch' }}</span>
+          </td>
+          <td>
+            {% if not verified_on_chain %}
+            <span class="badge badge-neutral">Not checked</span>
+            {% elif not row.chain_result %}
+            <span class="badge badge-neutral">No proof</span>
+            {% elif row.chain_result.error %}
+            <span class="badge badge-warning" title="{{ row.chain_result.error }}">RPC error</span>
+            {% elif row.chain_result.hash_matches %}
+            <span class="badge badge-success"><span class="dot"></span>Proof matches</span>
+            {% else %}
+            <span class="badge badge-danger"><span class="dot"></span>Proof mismatch</span>
+            {% endif %}
+          </td>
+          <td>{{ status_badge(row.status) }}</td>
+          <td class="right"><a class="btn btn-ghost btn-sm" href="{{ url_for('readings.detail', reading_id=row.id) }}">Inspect {{ icon('chevron', 'icon-sm') }}</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">
+      <div class="empty-icon">{{ icon('shield') }}</div>
+      <h3>No records to audit</h3>
+      <p>Record a meter reading first, then return here to verify its digest and proof.</p>
+      <a class="btn btn-primary btn-sm" href="{{ url_for('readings.new') }}">{{ icon('plus') }} Record reading</a>
+    </div>
+    {% endif %}
+  </div>
+</article>
+{% endblock %}

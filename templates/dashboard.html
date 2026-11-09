@@ -1,0 +1,284 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon, status_badge, score_dial, progress_bar %}
+{% block title %}Dashboard · AquaLedger{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Household water intelligence</div>
+    <h1>Welcome back, {{ current_user.first_name }}</h1>
+    <p>Here is how your water use is tracking. All figures are calculated from verified meter readings.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn-outline" href="{{ url_for('reports.index') }}">{{ icon('chart') }} Reports</a>
+    <a class="btn btn-primary" href="{{ url_for('readings.new') }}">{{ icon('plus') }} Record reading</a>
+  </div>
+</div>
+
+{% if chain_mode == 'simulation' %}
+<div class="banner warn" style="margin-bottom:18px">
+  {{ icon('info') }}
+  <div><strong>Simulation proof mode</strong> Records are protected by a local keccak hash-chain so the whole application is testable offline. Deploy the included Solidity contract to Sepolia and set <code>BLOCKCHAIN_MODE=sepolia</code> for real on-chain proofs.</div>
+</div>
+{% endif %}
+
+<div class="kpi-grid">
+  <article class="kpi">
+    <div class="kpi-top">
+      <span class="kpi-label">Today's usage</span>
+      <span class="kpi-icon teal">{{ icon('droplet') }}</span>
+    </div>
+    <div class="kpi-value">{{ stats.today_l|litres(1) }} <small>L</small></div>
+    <div class="kpi-foot">
+      {% if stats.change_pct is not none %}
+        <span class="delta {{ 'up' if stats.change_pct > 0 else ('down' if stats.change_pct < 0 else 'flat') }}">
+          {{ icon('arrow-up' if stats.change_pct > 0 else 'arrow-down', 'icon-sm') }} {{ stats.change_pct|abs }}%
+        </span> vs yesterday
+      {% else %}
+        <span class="delta flat">No comparison yet</span>
+      {% endif %}
+      <span>· limit {{ stats.daily_limit_l|litres }}</span>
+    </div>
+  </article>
+
+  <article class="kpi">
+    <div class="kpi-top">
+      <span class="kpi-label">This month</span>
+      <span class="kpi-icon">{{ icon('calendar') }}</span>
+    </div>
+    <div class="kpi-value">{{ stats.month_l|litres }} <small>L</small></div>
+    <div class="kpi-foot">
+      <span class="delta {{ 'up' if stats.month_l > stats.monthly_limit_l else 'flat' }}">
+        {{ ((stats.month_l / stats.monthly_limit_l * 100) if stats.monthly_limit_l else 0)|round(0)|int }}%
+      </span> of {{ stats.monthly_limit_l|litres }} L monthly limit
+    </div>
+  </article>
+
+  <article class="kpi">
+    <div class="kpi-top">
+      <span class="kpi-label">Average per day</span>
+      <span class="kpi-icon amber">{{ icon('activity') }}</span>
+    </div>
+    <div class="kpi-value">{{ stats.avg_daily_l|litres(1) }} <small>L</small></div>
+    <div class="kpi-foot">Last 30 recorded days · {{ stats.household_count }} household{{ '' if stats.household_count == 1 else 's' }}</div>
+  </article>
+
+  <article class="kpi">
+    <div class="kpi-top">
+      <span class="kpi-label">Conservation score</span>
+      <span class="kpi-icon purple">{{ icon('leaf') }}</span>
+    </div>
+    <div class="kpi-value">{{ stats.score.score if stats.score.score is not none else '--' }} <small>/ 100</small></div>
+    <div class="kpi-foot">
+      {% if stats.score.score is not none %}
+        <span class="grade">{{ stats.score.grade }}</span> across {{ stats.score.households }} household{{ '' if stats.score.households == 1 else 's' }}
+      {% else %}
+        Add readings to calculate a score
+      {% endif %}
+    </div>
+  </article>
+</div>
+
+<div class="grid split-2-1" style="margin-bottom:18px">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Daily consumption</div>
+        <div class="card-sub" id="dailySub">Litres per day over the selected period</div>
+      </div>
+      <div class="card-actions">
+        {% if households|length > 1 %}
+        <select class="select" id="householdFilter" aria-label="Filter by household" style="width:auto;min-width:150px;padding:7px 30px 7px 10px;font-size:0.75rem">
+          <option value="">All households</option>
+          {% for h in households %}<option value="{{ h.id }}">{{ h.household_code }}</option>{% endfor %}
+        </select>
+        {% endif %}
+        <div class="seg" role="group" aria-label="Chart period">
+          <button type="button" data-days="7">7D</button>
+          <button type="button" data-days="30" class="active">30D</button>
+          <button type="button" data-days="90">90D</button>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="chart-wrap lg"><canvas id="dailyChart" aria-label="Daily water consumption chart" role="img"></canvas></div>
+      <div class="chart-legend" style="margin-top:10px">
+        <span><i class="legend-dot" style="background:#0e9488"></i> Consumption (L)</span>
+        <span><i class="legend-dot" style="background:#f59e0b"></i> Daily limit</span>
+        <span id="dailyTotal" class="muted"></span>
+      </div>
+    </div>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Monthly budget</div>
+        <div class="card-sub">{{ stats.month_start.strftime('%B %Y') }}</div>
+      </div>
+      <a class="btn-link" href="{{ url_for('admin.settings') if current_user.is_admin else url_for('households.index') }}">Limits</a>
+    </div>
+    <div class="card-body">
+      <div class="chart-wrap sm"><canvas id="budgetChart" aria-label="Monthly budget chart" role="img"></canvas></div>
+      {% set month_pct = (stats.month_l / stats.monthly_limit_l * 100) if stats.monthly_limit_l else 0 %}
+      <div style="margin-top:14px">
+        <div class="flex between small">
+          <span class="muted">{{ stats.month_l|litres }} L used</span>
+          <strong>{{ month_pct|round(0)|int }}%</strong>
+        </div>
+        {{ progress_bar(month_pct, 'danger' if month_pct > 100 else ('warn' if month_pct > 80 else '')) }}
+        <div class="progress-meta">
+          <span>0 L</span>
+          <span>{{ stats.monthly_limit_l|litres }} L limit</span>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="score-row">
+        {{ score_dial(stats.score.score, stats.score.grade) }}
+        <div class="score-meta">
+          <strong>{{ 'Excellent' if (stats.score.score or 0) >= 90 else ('Very efficient' if (stats.score.score or 0) >= 80 else ('Efficient' if (stats.score.score or 0) >= 70 else 'Room to improve')) }}</strong>
+          <span>Based on per-person use vs a 135 L/day target over the last 30 days.</span>
+        </div>
+      </div>
+    </div>
+  </article>
+</div>
+
+<div class="grid split-2-1" style="margin-bottom:18px">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Monthly trend</div>
+        <div class="card-sub">Total consumption over the last 12 months</div>
+      </div>
+      <a class="btn-link" href="{{ url_for('reports.index') }}">Full report {{ icon('arrow-right', 'icon-sm') }}</a>
+    </div>
+    <div class="card-body">
+      <div class="chart-wrap"><canvas id="monthlyChart" aria-label="Monthly consumption chart" role="img"></canvas></div>
+    </div>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Latest alerts</div>
+        <div class="card-sub">{{ stats.active_alerts }} unread</div>
+      </div>
+      <a class="btn-link" href="{{ url_for('alerts.index') }}">View all</a>
+    </div>
+    <div class="card-body">
+      {% if alerts %}
+      <div class="stack-sm">
+        {% for alert in alerts %}
+        <a class="alert-card {{ alert.severity }}" href="{{ url_for('alerts.index') }}" style="padding:11px 13px;text-decoration:none">
+          <span class="alert-icon" style="width:30px;height:30px">{{ icon('alert' if alert.severity != 'info' else 'info', 'icon-sm') }}</span>
+          <span class="alert-content">
+            <strong style="font-size:0.77rem">{{ alert.title }}</strong>
+            <span class="tiny muted" style="display:block;margin-top:2px">{{ alert.household_code }} · {{ alert.created_at|ago }}</span>
+          </span>
+          <span class="badge badge-{{ alert.severity }}">{{ alert.severity }}</span>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty" style="padding:28px 10px">
+        <div class="empty-icon">{{ icon('shield') }}</div>
+        <h3>All clear</h3>
+        <p>No unread alerts. Your water use is within the configured limits.</p>
+      </div>
+      {% endif %}
+      <div class="divider"></div>
+      <div class="kv">
+        <div class="kv-row"><span>Anchored proofs</span><strong>{{ stats.anchored }}</strong></div>
+        <div class="kv-row"><span>Pending anchoring</span><strong>{{ stats.pending }}</strong></div>
+        <div class="kv-row"><span>Failed anchoring</span><strong>{{ stats.failed }}</strong></div>
+        <div class="kv-row"><span>Integrity failures</span><strong>{{ stats.tampered }}</strong></div>
+      </div>
+    </div>
+  </article>
+</div>
+
+<div class="grid split-2-1">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Recent readings</div>
+        <div class="card-sub">Newest meter entries across your households</div>
+      </div>
+      <a class="btn-link" href="{{ url_for('readings.index') }}">All readings</a>
+    </div>
+    <div class="table-wrap">
+      {% if recent %}
+      <table class="data">
+        <thead><tr><th>Date</th><th>Household</th><th>Consumption</th><th>Status</th><th>Proof</th><th></th></tr></thead>
+        <tbody>
+          {% for r in recent %}
+          <tr>
+            <td>{{ r.reading_date.strftime('%d %b %Y') }}</td>
+            <td><a href="{{ url_for('households.detail', household_id=r.household_id) }}">{{ r.household_code }}</a></td>
+            <td class="num">{{ r.consumption_l|litres(0) }} L</td>
+            <td>{{ status_badge(r.status) }}</td>
+            <td class="mono">{{ r.chain_tx_hash|hash }}</td>
+            <td class="right"><a class="btn btn-ghost btn-sm" href="{{ url_for('readings.detail', reading_id=r.id) }}">View {{ icon('chevron', 'icon-sm') }}</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty">
+        <div class="empty-icon">{{ icon('readings') }}</div>
+        <h3>No readings yet</h3>
+        <p>Record your first meter reading to start seeing daily consumption and proof status.</p>
+        <a class="btn btn-primary btn-sm" href="{{ url_for('readings.new') }}">{{ icon('plus') }} Record reading</a>
+      </div>
+      {% endif %}
+    </div>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Household scorecards</div>
+        <div class="card-sub">Efficiency vs the per-person target</div>
+      </div>
+    </div>
+    <div class="card-body">
+      {% if scores %}
+      <div class="stack">
+        {% for item in scores %}
+        <div class="flex" style="gap:13px;align-items:center">
+          {{ score_dial(item.score.score, item.score.grade, 'sm') }}
+          <div style="flex:1;min-width:0">
+            <div class="flex between">
+              <a href="{{ url_for('households.detail', household_id=item.household.id) }}" class="strong small">{{ item.household.household_code }}</a>
+              <span class="tag">{{ item.score.avg_daily_l|litres(0) }} L/day</span>
+            </div>
+            <div class="tiny muted" style="margin:2px 0 6px">{{ item.score.label }} · {{ item.household.members_count }} member{{ '' if item.household.members_count == 1 else 's' }}</div>
+            {{ progress_bar(item.score.score or 0) }}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty" style="padding:26px 8px">
+        <div class="empty-icon">{{ icon('home') }}</div>
+        <h3>No household yet</h3>
+        <p>{{ 'Add a household from the Households page.' if current_user.is_admin else 'An administrator needs to assign a household to your account.' }}</p>
+        <a class="btn btn-outline btn-sm" href="{{ url_for('households.index') }}">{{ icon('home') }} Households</a>
+      </div>
+      {% endif %}
+    </div>
+  </article>
+</div>
+
+<script type="application/json" id="dashboardData">{{ {
+  'month_l': stats.month_l,
+  'monthly_limit_l': stats.monthly_limit_l,
+  'daily_limit_l': stats.daily_limit_l,
+  'score': stats.score.score
+}|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

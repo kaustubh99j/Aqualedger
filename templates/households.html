@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon %}
+{% block title %}Households · AquaLedger{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Residents &amp; meters</div>
+    <h1>Households</h1>
+    <p>{{ 'Manage every household, meter and resident assignment.' if current_user.is_admin else 'The households linked to your account.' }}</p>
+  </div>
+  {% if current_user.is_admin %}
+  <div class="page-actions">
+    <button class="btn btn-primary" type="button" data-open-modal="householdModal" id="createHouseholdBtn">{{ icon('plus') }} Add household</button>
+  </div>
+  {% endif %}
+</div>
+
+{% if households %}
+<div class="grid grid-3">
+  {% for h in households %}
+  <article class="card">
+    <div class="card-head" style="padding-bottom:14px">
+      <div>
+        <div class="flex" style="gap:8px">
+          <span class="badge badge-teal">{{ h.household_code }}</span>
+          <span class="badge badge-{{ 'success' if h.status == 'active' else 'neutral' }}"><span class="dot"></span>{{ h.status|title }}</span>
+        </div>
+        <h3 style="font-size:1.05rem;margin-top:9px">{{ h.name }}</h3>
+        <p class="small muted">{{ h.address }}, {{ h.city }}</p>
+      </div>
+      <span class="kpi-icon teal">{{ icon('home') }}</span>
+    </div>
+    <div class="card-body" style="padding-top:14px">
+      <div class="grid grid-2" style="gap:9px;margin-bottom:14px">
+        <div class="meter-box" style="padding:9px 11px"><span>Residents</span><strong style="font-size:1rem">{{ h.members_count }}</strong></div>
+        <div class="meter-box" style="padding:9px 11px"><span>This month</span><strong style="font-size:1rem">{{ h.month_l|litres(0) }} L</strong></div>
+      </div>
+      <div class="kv">
+        {% if current_user.is_admin %}
+        <div class="kv-row"><span>Assigned to</span><strong>{{ h.owner_name or 'Unassigned' }}</strong></div>
+        {% endif %}
+        <div class="kv-row"><span>Meter ID</span><strong class="mono">{{ h.meter_id }}</strong></div>
+        <div class="kv-row"><span>Readings</span><strong>{{ h.reading_count }}</strong></div>
+      </div>
+      <div class="divider"></div>
+      <div class="flex" style="gap:7px;flex-wrap:wrap">
+        <a class="btn btn-outline btn-sm" href="{{ url_for('households.detail', household_id=h.id) }}">{{ icon('eye') }} View</a>
+        <a class="btn btn-ghost btn-sm" href="{{ url_for('readings.new', household_id=h.id) }}">{{ icon('plus') }} Reading</a>
+        {% if current_user.is_admin %}
+        <button class="btn btn-ghost btn-sm" type="button" data-edit-household
+          data-id="{{ h.id }}" data-code="{{ h.household_code }}" data-name="{{ h.name }}"
+          data-address="{{ h.address }}" data-city="{{ h.city }}" data-members="{{ h.members_count }}"
+          data-meter="{{ h.meter_id }}" data-installed="{{ h.meter_installed_on.isoformat() if h.meter_installed_on else '' }}"
+          data-user="{{ h.user_id or '' }}">{{ icon('edit') }} Edit</button>
+        <form method="post" action="{{ url_for('households.toggle_status', household_id=h.id) }}" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-ghost btn-sm" type="submit" data-confirm="Change this household's status?">{{ icon('power') }} {{ 'Deactivate' if h.status == 'active' else 'Activate' }}</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">
+  <div class="empty">
+    <div class="empty-icon">{{ icon('home') }}</div>
+    <h3>No households yet</h3>
+    <p>{{ 'Add the first household to begin recording meter readings.' if current_user.is_admin else 'An administrator has not linked a household to your account yet. Contact your society administrator.' }}</p>
+    {% if current_user.is_admin %}<button class="btn btn-primary" type="button" data-open-modal="householdModal">{{ icon('plus') }} Add household</button>{% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if current_user.is_admin %}
+<dialog class="modal" id="householdModal">
+  <div class="modal-card">
+    <form method="post" id="householdForm" action="{{ url_for('households.create') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="return_to" value="{{ url_for('households.index') }}">
+      <div class="modal-head">
+        <div>
+          <h3 id="householdModalTitle">Add household</h3>
+          <p>Personal details stay in MySQL. A random chain reference is generated automatically.</p>
+        </div>
+        <button class="modal-close" type="button" data-close-modal aria-label="Close">{{ icon('close', 'icon-sm') }}</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="field">
+            <label for="hh_code">Household code</label>
+            <input class="input" id="hh_code" name="household_code" maxlength="32" placeholder="Auto-generated">
+          </div>
+          <div class="field">
+            <label for="hh_name">Household name <span class="required">*</span></label>
+            <input class="input" id="hh_name" name="name" maxlength="120" required placeholder="e.g. Sharma Residence">
+          </div>
+          <div class="field full">
+            <label for="hh_address">Address <span class="required">*</span></label>
+            <input class="input" id="hh_address" name="address" maxlength="255" required placeholder="Flat / building / street">
+          </div>
+          <div class="field">
+            <label for="hh_city">City <span class="required">*</span></label>
+            <input class="input" id="hh_city" name="city" maxlength="80" value="Pune" required>
+          </div>
+          <div class="field">
+            <label for="hh_members">Members <span class="required">*</span></label>
+            <input class="input" id="hh_members" name="members_count" type="number" min="1" max="50" value="4" required>
+          </div>
+          <div class="field">
+            <label for="hh_meter">Meter ID <span class="required">*</span></label>
+            <input class="input" id="hh_meter" name="meter_id" maxlength="60" required placeholder="MTR-PUN-1042">
+          </div>
+          <div class="field">
+            <label for="hh_installed">Meter installed on</label>
+            <input class="input" id="hh_installed" name="meter_installed_on" type="date">
+          </div>
+          <div class="field full">
+            <label for="hh_user">Assigned resident</label>
+            <select class="select" id="hh_user" name="user_id">
+              <option value="">Unassigned (admin-managed)</option>
+              {% for u in users %}<option value="{{ u.id }}">{{ u.name }} · {{ u.email }}</option>{% endfor %}
+            </select>
+            <span class="hint">Residents can only see households assigned to their account.</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-body" style="padding-top:0">
+        <div class="form-actions" style="margin-top:0">
+          <button class="btn btn-primary" type="submit" data-loading="Saving...">{{ icon('check') }} <span id="householdSubmitLabel">Create household</span></button>
+          <button class="btn btn-ghost" type="button" data-close-modal>Cancel</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</dialog>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/households.js') }}"></script>
+{% endblock %}

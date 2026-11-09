@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon, empty_state %}
+{% block title %}Alerts · AquaLedger{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Usage watch</div>
+    <h1>Alerts</h1>
+    <p>Automatic rule checks flag consumption that approaches or exceeds the configured limits.</p>
+  </div>
+  <div class="page-actions">
+    {% if unread %}
+    <form method="post" action="{{ url_for('alerts.read_all') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="return_to" value="{{ request.full_path.rstrip('?') }}">
+      <button class="btn btn-outline" type="submit" data-loading="Updating...">{{ icon('check') }} Mark all read</button>
+    </form>
+    {% endif %}
+    <a class="btn btn-primary" href="{{ url_for('admin.settings') if current_user.is_admin else url_for('readings.index') }}">
+      {{ icon('settings') if current_user.is_admin else icon('readings') }}
+      {{ 'Configure limits' if current_user.is_admin else 'View readings' }}
+    </a>
+  </div>
+</div>
+
+{% if unread %}
+<div class="banner warn" style="margin-bottom:18px">
+  {{ icon('bell') }}
+  <div><strong>{{ unread }} unread alert{{ '' if unread == 1 else 's' }}</strong> Review the items below and mark them resolved once the underlying issue is addressed.</div>
+</div>
+{% endif %}
+
+<form class="card" method="get" action="{{ url_for('alerts.index') }}" style="padding:14px 16px;margin-bottom:18px">
+  <div class="flex flex-wrap" style="gap:10px">
+    <select class="select" name="severity" aria-label="Severity" style="width:auto;min-width:150px">
+      <option value="">Any severity</option>
+      {% for value in ['critical', 'warning', 'info'] %}
+      <option value="{{ value }}" {{ 'selected' if filters.get('severity') == value }}>{{ value|title }}</option>
+      {% endfor %}
+    </select>
+    <select class="select" name="status" aria-label="Status" style="width:auto;min-width:150px">
+      <option value="unread" {{ 'selected' if filters.get('status', 'unread') == 'unread' }}>Unread only</option>
+      <option value="all" {{ 'selected' if filters.get('status') == 'all' }}>All alerts</option>
+      <option value="resolved" {{ 'selected' if filters.get('status') == 'resolved' }}>Resolved</option>
+    </select>
+    <button class="btn btn-outline" type="submit">{{ icon('filter') }} Filter</button>
+    {% if filters.get('severity') or filters.get('status', 'unread') != 'unread' %}
+    <a class="btn btn-ghost" href="{{ url_for('alerts.index') }}">Clear</a>
+    {% endif %}
+    <span class="small muted" style="margin-left:auto">{{ alerts|length }} alert{{ '' if alerts|length == 1 else 's' }} shown</span>
+  </div>
+</form>
+
+{% if alerts %}
+<div class="stack">
+  {% for alert in alerts %}
+  <article class="alert-card {{ alert.severity }} {{ 'read' if alert.is_read }}" style="padding:16px 18px">
+    <span class="alert-icon">{{ icon('alert' if alert.severity != 'info' else 'info') }}</span>
+    <div class="alert-content">
+      <div class="flex between flex-wrap" style="gap:8px;align-items:flex-start">
+        <div>
+          <strong>{{ alert.title }}</strong>
+          <p>{{ alert.message }}</p>
+        </div>
+        <div class="flex" style="gap:6px;flex:none">
+          <span class="badge badge-{{ alert.severity }}">{{ alert.severity|title }}</span>
+          <span class="tag">{{ alert.alert_type|replace('_', ' ')|title }}</span>
+        </div>
+      </div>
+      <div class="alert-meta">
+        <span><a href="{{ url_for('households.detail', household_id=alert.household_id) }}">{{ alert.household_code }}</a> · {{ alert.household_name }}</span>
+        <span>{{ icon('clock', 'icon-sm') }} {{ alert.created_at|ago }}</span>
+        {% if alert.value_l is not none %}
+        <span>Measured <strong>{{ alert.value_l|litres }} L</strong>{% if alert.threshold_l is not none %} · threshold {{ alert.threshold_l|litres }} L{% endif %}</span>
+        {% endif %}
+        {% if alert.reading_id %}
+        <a href="{{ url_for('readings.detail', reading_id=alert.reading_id) }}">View reading #{{ alert.reading_id }}</a>
+        {% endif %}
+        {% if alert.resolved_at %}
+        <span class="badge badge-success"><span class="dot"></span>Resolved {{ alert.resolved_at|ago }}</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="alert-actions">
+      {% if not alert.is_read %}
+      <form method="post" action="{{ url_for('alerts.mark_read', alert_id=alert.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="return_to" value="{{ request.full_path.rstrip('?') }}">
+        <button class="btn btn-ghost btn-sm" type="submit" title="Mark as read">{{ icon('eye', 'icon-sm') }} Read</button>
+      </form>
+      {% endif %}
+      {% if not alert.resolved_at %}
+      <form method="post" action="{{ url_for('alerts.resolve', alert_id=alert.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="return_to" value="{{ request.full_path.rstrip('?') }}">
+        <button class="btn btn-outline btn-sm" type="submit" data-confirm="Mark this alert as resolved?">{{ icon('check-circle', 'icon-sm') }} Resolve</button>
+      </form>
+      {% endif %}
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<article class="card">
+  <div class="empty">
+    <div class="empty-icon">{{ icon('shield') }}</div>
+    <h3>{{ 'No resolved alerts' if filters.get('status') == 'resolved' else 'All clear' }}</h3>
+    <p>{{ 'Resolved alerts will appear here once you close an issue.' if filters.get('status') == 'resolved' else 'No alerts match the current filter. Your water use is within the configured limits.' }}</p>
+    <a class="btn btn-outline btn-sm" href="{{ url_for('alerts.index', status='all') }}">{{ icon('bell') }} View all alerts</a>
+  </div>
+</article>
+{% endif %}
+{% endblock %}

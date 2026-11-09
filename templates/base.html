@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="theme-color" content="#052c3d">
+  <title>{% block title %}{{ page_title or 'Dashboard' }} · AquaLedger{% endblock %}</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230e9488'/%3E%3Cpath d='M16 6s7 7.4 7 12a7 7 0 0 1-14 0c0-4.6 7-12 7-12Z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body class="app-body {% block body_class %}{% endblock %}">
+{% include '_sprite.html' %}
+{% from '_macros.html' import icon, nav_link, status_badge, score_dial, copy_button %}
+
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar" aria-label="Main navigation">
+    <a class="brand" href="{{ url_for('dashboard.index') }}">
+      <span class="brand-mark">{{ icon('droplet') }}</span>
+      <span>
+        <span class="brand-name">AquaLedger</span>
+        <span class="brand-tag">Proof of every drop</span>
+      </span>
+    </a>
+
+    <nav>
+      <div class="nav-group">
+        <div class="nav-label">Overview</div>
+        {{ nav_link('dashboard.index', 'Dashboard', 'dashboard') }}
+        {{ nav_link('households.index', 'Households', 'home', nav_counts.households) }}
+        {{ nav_link('readings.index', 'Meter readings', 'readings') }}
+      </div>
+      <div class="nav-group" style="margin-top:14px">
+        <div class="nav-label">Trust &amp; proof</div>
+        {{ nav_link('blockchain.index', 'Blockchain proofs', 'chain') }}
+        {{ nav_link('blockchain.audit_page', 'Integrity audit', 'shield') }}
+        {{ nav_link('alerts.index', 'Alerts', 'bell', nav_counts.unread_alerts) }}
+      </div>
+      <div class="nav-group" style="margin-top:14px">
+        <div class="nav-label">Insights</div>
+        {{ nav_link('reports.index', 'Reports &amp; history', 'chart') }}
+      </div>
+      {% if current_user.is_admin %}
+      <div class="nav-group" style="margin-top:14px">
+        <div class="nav-label">Administration</div>
+        {{ nav_link('admin.index', 'Admin overview', 'activity') }}
+        {{ nav_link('admin.users', 'Users &amp; wallets', 'users') }}
+        {{ nav_link('admin.settings', 'Water limits', 'settings') }}
+        {{ nav_link('admin.audit_log', 'Audit log', 'file') }}
+      </div>
+      {% endif %}
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="chain-mini">
+        <span class="chain-dot {{ 'sim' if chain_mode == 'simulation' }}"></span>
+        <span>
+          <strong>{{ 'Simulation mode' if chain_mode == 'simulation' else 'Ethereum Sepolia' }}</strong>
+          {{ 'Offline proof ledger' if chain_mode == 'simulation' else 'Proofs anchored on-chain' }}
+        </span>
+      </div>
+      <div class="user-chip">
+        <span class="avatar">{{ current_user.initials }}</span>
+        <span class="user-chip-meta">
+          <strong>{{ current_user.name }}</strong>
+          <span>{{ 'Administrator' if current_user.is_admin else 'Resident account' }}</span>
+        </span>
+        <form action="{{ url_for('auth.logout') }}" method="post">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="logout-btn tooltip" type="submit" data-tip="Sign out" aria-label="Sign out">{{ icon('logout') }}</button>
+        </form>
+      </div>
+    </div>
+  </aside>
+  <div class="sidebar-backdrop" data-sidebar-close></div>
+
+  <div class="app-main">
+    <header class="topbar">
+      <button class="icon-btn menu-btn" type="button" data-sidebar-toggle aria-label="Open navigation">{{ icon('menu') }}</button>
+      <div class="topbar-titles">
+        <h1>{% block topbar_title %}{{ page_title or 'Dashboard' }}{% endblock %}</h1>
+        <p>{% block topbar_sub %}Blockchain-verified water intelligence{% endblock %}</p>
+      </div>
+      <div class="topbar-actions">
+        <span class="chain-pill {{ 'sim' if chain_mode == 'simulation' }}">
+          <span class="chain-dot {{ 'sim' if chain_mode == 'simulation' }}"></span>
+          <span>{{ 'Simulation' if chain_mode == 'simulation' else 'Sepolia testnet' }}</span>
+        </span>
+        <a class="icon-btn" href="{{ url_for('alerts.index') }}" aria-label="Alerts">
+          {{ icon('bell') }}
+          {% if nav_counts.unread_alerts %}<span class="badge-dot">{{ nav_counts.unread_alerts if nav_counts.unread_alerts < 100 else '99+' }}</span>{% endif %}
+        </a>
+        <a class="topbar-user" href="{{ url_for('dashboard.profile') }}" aria-label="Your profile">
+          <span class="avatar">{{ current_user.initials }}</span>
+          <span>
+            <strong>{{ current_user.name }}</strong>
+            <span>{{ 'Admin' if current_user.is_admin else 'Resident' }}</span>
+          </span>
+        </a>
+      </div>
+    </header>
+
+    <main class="page" id="main">
+      {% block content %}{% endblock %}
+    </main>
+
+    <footer class="app-footer">
+      <span>AquaLedger · {{ current_year }} · Proofs on Ethereum, personal data private.</span>
+      <span>Mode: <strong>{{ chain_mode }}</strong> · <a href="{{ url_for('blockchain.audit_page') }}">Integrity audit</a></span>
+    </footer>
+  </div>
+</div>
+
+<div class="flash-stack" id="flashStack" aria-live="polite">
+  {% for category, message in get_flashed_messages(with_categories=true) %}
+  <div class="flash {{ category if category in ['success','danger','warning','info'] else 'info' }}" role="status">
+    {{ icon('check-circle' if category == 'success' else ('alert' if category in ['danger','warning'] else 'info')) }}
+    <span>{{ message }}</span>
+    <button class="flash-close" type="button" aria-label="Dismiss">×</button>
+  </div>
+  {% endfor %}
+</div>
+
+<script>
+  window.AQUALEDGER = {
+    csrfToken: {{ csrf_token()|tojson }},
+    chainMode: {{ chain_mode|tojson }},
+    isAdmin: {{ current_user.is_admin|tojson }},
+    userId: {{ current_user.id }},
+    walletAddress: {{ (current_user.wallet_address or '')|tojson }}
+  };
+</script>
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/ethers.umd.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

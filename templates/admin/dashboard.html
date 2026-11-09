@@ -1,0 +1,194 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon, progress_bar %}
+{% block title %}Admin overview · AquaLedger{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Administration</div>
+    <h1>Admin overview</h1>
+    <p>Platform health, household activity and the latest integrity signals in one place.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn-outline" href="{{ url_for('admin.audit_log') }}">{{ icon('file') }} Audit log</a>
+    <form method="post" action="{{ url_for('admin.integrity_audit') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-primary" type="submit" data-loading="Scanning...">{{ icon('shield') }} Run integrity scan</button>
+    </form>
+  </div>
+</div>
+
+{% if chain_status.error %}
+<div class="banner danger" style="margin-bottom:18px">
+  {{ icon('alert') }}
+  <div><strong>Blockchain connection problem</strong> {{ chain_status.error }}</div>
+</div>
+{% elif chain_status.mode == 'simulation' %}
+<div class="banner warn" style="margin-bottom:18px">
+  {{ icon('info') }}
+  <div><strong>Simulation proof mode</strong> Proofs are anchored to the local keccak hash-chain. Switch to Sepolia in <code>.env</code> for public on-chain proofs.</div>
+</div>
+{% endif %}
+
+<div class="kpi-grid">
+  <article class="kpi">
+    <div class="kpi-top"><span class="kpi-label">Users</span><span class="kpi-icon teal">{{ icon('users') }}</span></div>
+    <div class="kpi-value">{{ counts.users or 0 }}</div>
+    <div class="kpi-foot">{{ counts.admins or 0 }} administrator{{ '' if (counts.admins or 0) == 1 else 's' }} · <a href="{{ url_for('admin.users') }}">Manage</a></div>
+  </article>
+  <article class="kpi">
+    <div class="kpi-top"><span class="kpi-label">Households</span><span class="kpi-icon">{{ icon('home') }}</span></div>
+    <div class="kpi-value">{{ counts.households or 0 }}</div>
+    <div class="kpi-foot">{{ counts.active_households or 0 }} active</div>
+  </article>
+  <article class="kpi">
+    <div class="kpi-top"><span class="kpi-label">Meter readings</span><span class="kpi-icon amber">{{ icon('readings') }}</span></div>
+    <div class="kpi-value">{{ counts.readings or 0 }}</div>
+    <div class="kpi-foot">{{ counts.month_l|litres }} L recorded this month</div>
+  </article>
+  <article class="kpi">
+    <div class="kpi-top"><span class="kpi-label">Anchored proofs</span><span class="kpi-icon purple">{{ icon('chain') }}</span></div>
+    <div class="kpi-value">{{ counts.anchored or 0 }}</div>
+    <div class="kpi-foot">
+      {{ counts.pending or 0 }} pending · {{ counts.failed or 0 }} failed · {{ counts.tampered or 0 }} tampered
+    </div>
+  </article>
+</div>
+
+<div class="grid split-2-1" style="margin-bottom:18px">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Highest usage this month</div>
+        <div class="card-sub">Top five households by month-to-date consumption</div>
+      </div>
+      <a class="btn-link" href="{{ url_for('households.index') }}">All households</a>
+    </div>
+    <div class="table-wrap">
+      {% if top %}
+      <table class="data">
+        <thead><tr><th>Household</th><th>Month to date</th><th>Usage bar</th><th></th></tr></thead>
+        <tbody>
+          {% set peak = (top|map(attribute='month_l')|map('float')|max) or 1 %}
+          {% for row in top %}
+          <tr>
+            <td><a href="{{ url_for('households.detail', household_id=row.id) }}">{{ row.household_code }}</a> <span class="muted small">{{ row.name }}</span></td>
+            <td class="num">{{ row.month_l|litres }} L</td>
+            <td style="min-width:180px">{{ progress_bar((row.month_l|float / peak * 100) if peak else 0) }}</td>
+            <td class="right"><a class="btn btn-ghost btn-sm" href="{{ url_for('households.detail', household_id=row.id) }}">Open {{ icon('chevron', 'icon-sm') }}</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty" style="padding:28px">
+        <div class="empty-icon">{{ icon('home') }}</div>
+        <h3>No households yet</h3>
+        <p>Add the first household to begin collecting readings.</p>
+        <a class="btn btn-primary btn-sm" href="{{ url_for('households.index') }}">{{ icon('plus') }} Add household</a>
+      </div>
+      {% endif %}
+    </div>
+  </article>
+
+  <div class="stack">
+    <article class="card">
+      <div class="card-head">
+        <div><div class="card-title">System integrity</div><div class="card-sub">Latest digest recomputation</div></div>
+        <span class="badge badge-{{ 'success' if integrity.tampered == 0 else 'danger' }}"><span class="dot"></span>{{ 'Healthy' if integrity.tampered == 0 else 'Issues found' }}</span>
+      </div>
+      <div class="card-body">
+        <div class="kv">
+          <div class="kv-row"><span>Records checked</span><strong>{{ integrity.total }}</strong></div>
+          <div class="kv-row"><span>Digest matches</span><strong style="color:var(--green)">{{ integrity.valid }}</strong></div>
+          <div class="kv-row"><span>Tampered</span><strong style="color:{{ 'var(--red)' if integrity.tampered else 'var(--muted)' }}">{{ integrity.tampered }}</strong></div>
+          <div class="kv-row"><span>Pending proofs</span><strong>{{ integrity.pending }}</strong></div>
+          <div class="kv-row"><span>Unread alerts</span><strong>{{ counts.unread_alerts or 0 }}</strong></div>
+        </div>
+        <div class="form-actions">
+          <a class="btn btn-outline btn-sm" href="{{ url_for('blockchain.audit_page') }}">{{ icon('shield') }} Open audit</a>
+          <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.settings') }}">{{ icon('settings') }} Limits</a>
+        </div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head">
+        <div><div class="card-title">Chain status</div><div class="card-sub">{{ chain_status.chain_name }}</div></div>
+        <span class="badge badge-{{ 'success' if chain_status.connected else 'danger' }}"><span class="dot"></span>{{ 'Connected' if chain_status.connected else 'Disconnected' }}</span>
+      </div>
+      <div class="card-body">
+        <div class="kv">
+          <div class="kv-row"><span>Mode</span><strong>{{ chain_status.mode }}</strong></div>
+          <div class="kv-row"><span>Latest block</span><strong>{{ chain_status.block_number if chain_status.block_number is not none else '--' }}</strong></div>
+          <div class="kv-row"><span>Contract records</span><strong>{{ chain_status.record_count if chain_status.record_count is not none else '--' }}</strong></div>
+          <div class="kv-row"><span>Recorder balance</span><strong>{{ (chain_status.balance_eth|string + ' ETH') if chain_status.balance_eth is not none else '--' }}</strong></div>
+          <div class="kv-row"><span>Conservation score</span><strong>{{ score.score if score.score is not none else '--' }} / 100</strong></div>
+        </div>
+        <div class="form-actions">
+          <a class="btn btn-outline btn-sm" href="{{ url_for('blockchain.index') }}">{{ icon('chain') }} Proof explorer</a>
+        </div>
+      </div>
+    </article>
+  </div>
+</div>
+
+<div class="grid split-2-1">
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Recent administrative activity</div>
+        <div class="card-sub">Last ten audit-log entries</div>
+      </div>
+      <a class="btn-link" href="{{ url_for('admin.audit_log') }}">Full audit log</a>
+    </div>
+    <div class="table-wrap">
+      {% if recent_audit %}
+      <table class="data">
+        <thead><tr><th>When</th><th>User</th><th>Action</th><th>Entity</th></tr></thead>
+        <tbody>
+          {% for entry in recent_audit %}
+          <tr>
+            <td class="small muted">{{ entry.created_at|ago }}</td>
+            <td>{{ entry.user_name or 'System' }}</td>
+            <td><span class="tag">{{ entry.action }}</span></td>
+            <td class="small muted">{{ entry.entity or '--' }}{% if entry.entity_id %} #{{ entry.entity_id }}{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty" style="padding:26px"><div class="empty-icon">{{ icon('file') }}</div><h3>No audit entries</h3><p>Actions performed in the app will be recorded here.</p></div>
+      {% endif %}
+    </div>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <div>
+        <div class="card-title">Recent alerts</div>
+        <div class="card-sub">Newest usage signals across all households</div>
+      </div>
+      <a class="btn-link" href="{{ url_for('alerts.index', status='all') }}">View all</a>
+    </div>
+    <div class="card-body">
+      {% if recent_alerts %}
+      <div class="stack-sm">
+        {% for alert in recent_alerts %}
+        <a class="alert-card {{ alert.severity }}" href="{{ url_for('alerts.index', status='all') }}" style="padding:10px 12px;text-decoration:none">
+          <span class="alert-icon" style="width:28px;height:28px">{{ icon('alert' if alert.severity != 'info' else 'info', 'icon-sm') }}</span>
+          <span class="alert-content">
+            <strong style="font-size:0.75rem">{{ alert.title }}</strong>
+            <span class="tiny muted" style="display:block">{{ alert.household_code }} · {{ alert.created_at|ago }}</span>
+          </span>
+          <span class="badge badge-{{ alert.severity }}">{{ alert.severity }}</span>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty" style="padding:26px 8px"><div class="empty-icon">{{ icon('shield') }}</div><h3>No alerts</h3><p>All households are within their configured limits.</p></div>
+      {% endif %}
+    </div>
+  </article>
+</div>
+{% endblock %}

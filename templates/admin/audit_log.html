@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon %}
+{% block title %}Audit log · AquaLedger{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Administration</div>
+    <h1>Audit log</h1>
+    <p>Off-chain accountability trail for sign-ins, reading creation, limit changes, wallet actions and integrity checks.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn-outline" href="{{ url_for('admin.index') }}">{{ icon('dashboard') }} Admin overview</a>
+    <a class="btn btn-primary" href="{{ url_for('blockchain.audit_page') }}">{{ icon('shield') }} Integrity audit</a>
+  </div>
+</div>
+
+<form class="card" method="get" action="{{ url_for('admin.audit_log') }}" style="padding:14px 16px;margin-bottom:18px">
+  <div class="flex flex-wrap" style="gap:10px">
+    <select class="select" name="action" aria-label="Action filter" style="width:auto;min-width:240px">
+      <option value="">All actions</option>
+      {% for row in actions %}
+      <option value="{{ row.action }}" {{ 'selected' if selected_action == row.action }}>{{ row.action }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-outline" type="submit">{{ icon('filter') }} Filter</button>
+    {% if selected_action %}
+    <a class="btn btn-ghost" href="{{ url_for('admin.audit_log') }}">Clear</a>
+    {% endif %}
+    <span class="small muted" style="margin-left:auto">{{ logs|length }} entr{{ 'y' if logs|length == 1 else 'ies' }} · newest first</span>
+  </div>
+</form>
+
+<article class="card">
+  <div class="table-wrap">
+    {% if logs %}
+    <table class="data">
+      <thead>
+        <tr><th>When</th><th>User</th><th>Action</th><th>Entity</th><th>IP address</th><th>Details</th></tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td class="small muted" style="white-space:nowrap">{{ log.created_at|dt }}<br><span class="tiny">{{ log.created_at|ago }}</span></td>
+          <td>
+            {% if log.user_name %}
+            <strong class="small">{{ log.user_name }}</strong>
+            {% else %}
+            <span class="small muted">System</span>
+            {% endif %}
+          </td>
+          <td><span class="tag">{{ log.action }}</span></td>
+          <td class="small">
+            {% if log.entity %}
+            {{ log.entity }}{% if log.entity_id %} <span class="muted">#{{ log.entity_id }}</span>{% endif %}
+            {% else %}
+            <span class="muted">--</span>
+            {% endif %}
+          </td>
+          <td class="mono tiny">{{ log.ip_address or '--' }}</td>
+          <td style="max-width:420px">
+            {% if log.details %}
+            <details>
+              <summary class="small" style="cursor:pointer;color:var(--teal)">View details</summary>
+              <pre class="hash-box" style="margin-top:6px;white-space:pre-wrap;font-size:0.64rem">{{ log.details }}</pre>
+            </details>
+            {% else %}
+            <span class="muted small">--</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">
+      <div class="empty-icon">{{ icon('file') }}</div>
+      <h3>No audit entries found</h3>
+      <p>{{ 'No entries match this action filter.' if selected_action else 'Actions performed in the application will be recorded here automatically.' }}</p>
+      {% if selected_action %}<a class="btn btn-outline btn-sm" href="{{ url_for('admin.audit_log') }}">Clear filter</a>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</article>
+
+<div class="form-note" style="margin-top:18px">
+  {{ icon('lock', 'icon-sm') }} <strong>Audit integrity.</strong> The audit log is stored only in MySQL and is never written on-chain. It records accountability metadata, not meter values or personal data beyond the acting user.
+</div>
+{% endblock %}

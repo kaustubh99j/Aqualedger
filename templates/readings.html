@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon, status_badge, pagination as pager %}
+{% block title %}Meter readings · AquaLedger{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Meter log</div>
+    <h1>Meter readings</h1>
+    <p>Every entry is append-only, automatically validated against the previous meter value and hashed for proof.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn-primary" href="{{ url_for('readings.new') }}">{{ icon('plus') }} Record reading</a>
+  </div>
+</div>
+
+<form class="card" method="get" action="{{ url_for('readings.index') }}" style="padding:14px 16px;margin-bottom:18px">
+  <div class="flex flex-wrap" style="gap:10px">
+    <select class="select" name="household_id" aria-label="Household" style="width:auto;min-width:170px">
+      <option value="">All households</option>
+      {% for h in households %}<option value="{{ h.id }}" {{ 'selected' if filters.household_id == h.id|string }}>{{ h.household_code }} · {{ h.name }}</option>{% endfor %}
+    </select>
+    <select class="select" name="status" aria-label="Proof status" style="width:auto;min-width:150px">
+      <option value="">Any status</option>
+      {% for s in ['anchored','pending','failed','tampered'] %}<option value="{{ s }}" {{ 'selected' if filters.status == s }}>{{ s|title }}</option>{% endfor %}
+    </select>
+    <input class="input" type="date" name="from" value="{{ filters.from }}" aria-label="From date" style="width:auto">
+    <input class="input" type="date" name="to" value="{{ filters.to }}" aria-label="To date" style="width:auto">
+    <button class="btn btn-outline" type="submit">{{ icon('filter') }} Filter</button>
+    {% if filters.household_id or filters.status or filters.from or filters.to %}
+    <a class="btn btn-ghost" href="{{ url_for('readings.index') }}">Clear</a>
+    {% endif %}
+    <span class="small muted" style="margin-left:auto">{{ pagination.total }} record{{ '' if pagination.total == 1 else 's' }}</span>
+  </div>
+</form>
+
+<article class="card">
+  <div class="table-wrap">
+    {% if readings %}
+    <table class="data">
+      <thead>
+        <tr><th>Date</th><th>Household</th><th>Previous m³</th><th>Current m³</th><th>Consumption</th><th>Source</th><th>Recorded by</th><th>Status</th><th>Proof</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for r in readings %}
+        <tr>
+          <td>{{ r.reading_date.strftime('%d %b %Y') }}</td>
+          <td><a href="{{ url_for('households.detail', household_id=r.household_id) }}">{{ r.household_code }}</a></td>
+          <td class="mono">{{ '%.3f'|format(r.previous_reading_m3) }}</td>
+          <td class="mono">{{ '%.3f'|format(r.current_reading_m3) }}</td>
+          <td class="num">{{ r.consumption_l|litres(0) }} L</td>
+          <td><span class="tag">{{ r.reading_source|title }}</span></td>
+          <td class="small muted">{{ r.recorder_name or 'System' }}</td>
+          <td>{{ status_badge(r.status) }}</td>
+          <td class="mono">{{ r.chain_tx_hash|hash }}</td>
+          <td class="right"><a class="btn btn-ghost btn-sm" href="{{ url_for('readings.detail', reading_id=r.id) }}">View {{ icon('chevron', 'icon-sm') }}</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="table-foot">
+      <p>Showing page {{ pagination.page }} of {{ pagination.pages }}</p>
+      {{ pager(pagination) }}
+    </div>
+    {% else %}
+    <div class="empty">
+      <div class="empty-icon">{{ icon('readings') }}</div>
+      <h3>No readings found</h3>
+      <p>{{ 'Try clearing the filters, or record the first meter reading.' if filters.household_id or filters.status or filters.from or filters.to else 'Record the first meter reading to begin building your water history.' }}</p>
+      <a class="btn btn-primary btn-sm" href="{{ url_for('readings.new') }}">{{ icon('plus') }} Record reading</a>
+    </div>
+    {% endif %}
+  </div>
+</article>
+{% endblock %}

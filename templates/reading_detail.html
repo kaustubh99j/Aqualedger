@@ -1,0 +1,267 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon, status_badge, progress_bar, copy_button %}
+{% block title %}Reading #{{ reading.id }} · AquaLedger{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+  <a href="{{ url_for('readings.index') }}">Meter readings</a>
+  <span class="sep">/</span>
+  <span>#{{ reading.id }}</span>
+</div>
+
+<div class="page-head">
+  <div>
+    <div class="eyebrow">{{ reading.reading_date.strftime('%A, %d %B %Y') }} · {{ reading.household_code }}</div>
+    <h1>Reading #{{ reading.id }}</h1>
+    <p>{{ reading.household_name }} · entered by {{ reading.recorder_name or 'system' }} on {{ reading.created_at|dt }}</p>
+  </div>
+  <div class="page-actions">
+    <span id="readingStatus">{{ status_badge(reading.status) }}</span>
+    <a class="btn btn-outline" href="{{ url_for('households.detail', household_id=reading.household_id) }}">{{ icon('home') }} Household</a>
+    <button class="btn btn-primary" type="button" id="verifyBtn">{{ icon('shield') }} Verify record</button>
+  </div>
+</div>
+
+{% if not db_match %}
+<div class="banner danger" style="margin-bottom:18px">
+  {{ icon('alert') }}
+  <div><strong>Integrity warning</strong> The stored digest does not match the current database values. This record was modified after it was created and cannot be trusted.</div>
+</div>
+{% endif %}
+
+<div class="grid split-2-1">
+  <div class="stack">
+    <article class="card water">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Meter movement</div>
+          <div class="card-sub">Cumulative readings in cubic metres</div>
+        </div>
+        <span class="badge badge-{{ 'success' if reading.reading_source == 'manual' else 'info' }}">{{ reading.reading_source|title }}</span>
+      </div>
+      <div class="card-body">
+        <div class="meter-chain">
+          <div class="meter-box">
+            <span>Previous</span>
+            <strong>{{ '%.3f'|format(reading.previous_reading_m3) }} <small class="muted" style="font-size:0.7rem">m³</small></strong>
+          </div>
+          <span class="meter-arrow">{{ icon('arrow-right', 'icon-lg') }}</span>
+          <div class="meter-box">
+            <span>Current</span>
+            <strong>{{ '%.3f'|format(reading.current_reading_m3) }} <small class="muted" style="font-size:0.7rem">m³</small></strong>
+          </div>
+          <span class="meter-arrow">{{ icon('arrow-right', 'icon-lg') }}</span>
+          <div class="meter-box" style="background:var(--mint-2);border-color:#c8efe7">
+            <span>Consumption</span>
+            <strong style="color:var(--teal)">{{ reading.consumption_l|litres }} <small class="muted" style="font-size:0.7rem">L</small></strong>
+          </div>
+        </div>
+        <div class="grid grid-3" style="margin-top:16px;gap:10px">
+          <div class="meter-box" style="padding:9px 11px"><span>Sequence</span><strong style="font-size:0.95rem">#{{ reading.sequence }}</strong></div>
+          <div class="meter-box" style="padding:9px 11px"><span>Daily limit</span><strong style="font-size:0.95rem">{{ limits.daily_limit_l|litres }} L</strong></div>
+          <div class="meter-box" style="padding:9px 11px"><span>Source</span><strong style="font-size:0.95rem">{{ reading.reading_source|title }}</strong></div>
+        </div>
+        {% if reading.notes %}
+        <div class="form-note" style="margin-top:14px">{{ icon('file', 'icon-sm') }} <strong>Note:</strong> {{ reading.notes }}</div>
+        {% endif %}
+      </div>
+    </article>
+
+    <article class="card" id="integrityCard">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Integrity verification</div>
+          <div class="card-sub">Recompute the keccak256 digest and compare it with the anchored proof</div>
+        </div>
+        <span id="verifyVerdict" class="badge badge-{{ 'success' if db_match else 'danger' }}">{{ 'Digest matches' if db_match else 'Tampered' }}</span>
+      </div>
+      <div class="card-body">
+        <div class="stack-sm">
+          <div>
+            <div class="label" style="margin-bottom:4px">Stored record digest</div>
+            <div class="hash-box" id="storedHash">{{ reading.record_hash }}</div>
+          </div>
+          <div>
+            <div class="label" style="margin-bottom:4px">Recomputed from current database values</div>
+            <div class="hash-box {{ 'match' if db_match else 'mismatch' }}" id="recomputedHash">{{ meta.recomputed_hash }}</div>
+          </div>
+        </div>
+        <div id="verifyResult" style="margin-top:14px">
+          <div class="kv">
+            <div class="kv-row"><span>Database integrity</span><strong id="dbMatchText" style="color:{{ 'var(--green)' if db_match else 'var(--red)' }}">{{ 'Match' if db_match else 'Mismatch — record modified' }}</strong></div>
+            <div class="kv-row"><span>On-chain proof</span><strong id="chainMatchText">{{ 'Anchored' if reading.status == 'anchored' else 'Not anchored yet' }}</strong></div>
+            <div class="kv-row"><span>Proof mode</span><strong>{{ reading.chain_mode }}</strong></div>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-outline btn-sm" type="button" id="verifyBtnInline">{{ icon('shield') }} Run verification</button>
+          {% if reading.chain_mode == 'sepolia' and reading.chain_tx_hash %}
+          <a class="btn btn-ghost btn-sm" href="{{ config.EXPLORER_BASE_URL }}/tx/{{ reading.chain_tx_hash }}" target="_blank" rel="noopener">{{ icon('external') }} View on Etherscan</a>
+          {% endif %}
+        </div>
+        <div id="verifyError" class="field-error" style="margin-top:8px"></div>
+      </div>
+    </article>
+
+    <article class="card" id="proofCard">
+      <div class="card-head">
+        <div>
+          <div class="card-title">Blockchain proof</div>
+          <div class="card-sub" id="anchorSub">{{ 'Anchored on Ethereum Sepolia' if reading.chain_mode == 'sepolia' else ('Simulated proof ledger' if reading.chain_mode == 'simulation' else 'Proof status') }}</div>
+        </div>
+        <span id="anchorStatusBadge">{{ status_badge(reading.status) }}</span>
+      </div>
+      <div class="card-body">
+        <div class="kv">
+          <div class="kv-row"><span>Proof mode</span><strong>{{ 'Ethereum Sepolia' if reading.chain_mode == 'sepolia' else 'Simulation (offline hash-chain)' }}</strong></div>
+          <div class="kv-row"><span>Transaction</span><strong class="mono" style="font-size:0.7rem" id="txHashCell">{{ reading.chain_tx_hash or '--' }} {% if reading.chain_tx_hash %}{{ copy_button(reading.chain_tx_hash, 'Copy transaction hash') }}{% endif %}</strong></div>
+          <div class="kv-row"><span>Block</span><strong id="blockCell">{{ reading.chain_block or '--' }}</strong></div>
+          <div class="kv-row"><span>Anchored by</span><strong class="mono" style="font-size:0.7rem">{{ reading.anchored_by or '--' }}</strong></div>
+          <div class="kv-row"><span>Anchored at</span><strong id="anchorTimeCell">{{ reading.chain_timestamp|dt if reading.chain_timestamp else '--' }}</strong></div>
+          <div class="kv-row"><span>Confirmations</span><strong>{{ reading.chain_confirmations }}</strong></div>
+        </div>
+
+        <div class="divider"></div>
+
+        {% if reading.status == 'anchored' %}
+          <div class="banner success">
+            {{ icon('check-circle') }}
+            <div><strong>Proof anchored</strong> The digest is stored by the AquaLedger contract. Re-run verification any time to prove this record has not changed.</div>
+          </div>
+          {% if reading.chain_tx_hash and reading.chain_mode == 'sepolia' %}
+          <div class="form-actions">
+            <a class="btn btn-outline btn-sm" href="{{ config.EXPLORER_BASE_URL }}/tx/{{ reading.chain_tx_hash }}" target="_blank" rel="noopener">{{ icon('external') }} Open transaction</a>
+          </div>
+          {% endif %}
+        {% else %}
+          <div class="banner warn">
+            {{ icon('info') }}
+            <div><strong>Anchoring in progress or pending</strong> The reading is safely stored off-chain. A proof can be anchored with the server recorder wallet or by signing with an authorised MetaMask wallet.</div>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn-primary btn-sm" type="button" id="anchorServerBtn" data-loading="Submitting...">{{ icon('chain') }} Anchor via server recorder</button>
+            {% if chain_mode == 'sepolia' and current_user.wallet_verified %}
+            <button class="btn btn-outline btn-sm" type="button" id="metamaskAnchorBtn">{{ icon('wallet') }} Sign with MetaMask</button>
+            {% elif chain_mode == 'sepolia' %}
+            <a class="btn btn-outline btn-sm" href="{{ url_for('dashboard.profile') }}">{{ icon('wallet') }} Link wallet to sign</a>
+            {% endif %}
+            <button class="btn btn-ghost btn-sm" type="button" id="refreshAnchorBtn">{{ icon('refresh') }} Refresh status</button>
+          </div>
+          <p class="hint" id="anchorHint" style="margin-top:10px">
+            {% if chain_mode == 'simulation' %}
+              Simulation mode anchors through the backend proof ledger. Switch to Sepolia to use MetaMask transactions.
+            {% else %}
+              Your MetaMask wallet must be linked and authorised by an administrator before you can sign transactions.
+            {% endif %}
+          </p>
+          <div id="anchorError" class="field-error" style="margin-top:8px"></div>
+        {% endif %}
+      </div>
+    </article>
+
+    {% if transactions %}
+    <article class="card">
+      <div class="card-head">
+        <div><div class="card-title">Anchoring attempts</div><div class="card-sub">Every transaction associated with this record</div></div>
+      </div>
+      <div class="table-wrap">
+        <table class="data">
+          <thead><tr><th>Attempt</th><th>Mode</th><th>Transaction</th><th>Status</th><th>Block</th><th>When</th></tr></thead>
+          <tbody>
+            {% for t in transactions %}
+            <tr>
+              <td class="mono">#{{ t.id }}</td>
+              <td><span class="tag">{{ t.chain_mode }}</span></td>
+              <td class="mono">{% if t.tx_hash %}<a href="{{ config.EXPLORER_BASE_URL }}/tx/{{ t.tx_hash }}" target="_blank" rel="noopener">{{ t.tx_hash|hash }}</a>{% else %}--{% endif %}</td>
+              <td><span class="badge badge-{{ {'confirmed':'success','pending':'warning','submitted':'info','failed':'danger'}.get(t.status, 'neutral') }}">{{ t.status|title }}</span></td>
+              <td>{{ t.block_number or '--' }}</td>
+              <td class="small muted">{{ t.created_at|ago }}</td>
+            </tr>
+            {% if t.error_message %}
+            <tr><td colspan="6"><div class="field-error">{{ t.error_message }}</div></td></tr>
+            {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+    {% endif %}
+  </div>
+
+  <div class="stack">
+    <article class="card">
+      <div class="card-head">
+        <div><div class="card-title">Household</div><div class="card-sub">{{ reading.household_code }}</div></div>
+        <span class="kpi-icon teal">{{ icon('home') }}</span>
+      </div>
+      <div class="card-body">
+        <h3 style="font-size:1.05rem">{{ reading.household_name }}</h3>
+        <p class="small muted">{{ household.address }}, {{ household.city }}</p>
+        <div class="divider"></div>
+        <div class="kv">
+          <div class="kv-row"><span>Residents</span><strong>{{ reading.members_count }}</strong></div>
+          <div class="kv-row"><span>Meter</span><strong class="mono">{{ reading.meter_id }}</strong></div>
+          <div class="kv-row"><span>Daily limit</span><strong>{{ limits.daily_limit_l|litres }} L</strong></div>
+          <div class="kv-row"><span>Monthly limit</span><strong>{{ limits.monthly_limit_l|litres }} L</strong></div>
+          <div class="kv-row"><span>Limit source</span><strong>{{ limits.source|title }}</strong></div>
+        </div>
+        <div class="divider"></div>
+        <div class="label" style="margin-bottom:5px">Household chain reference</div>
+        <div class="hash-box" style="font-size:0.64rem">{{ reading.chain_ref }} {{ copy_button(reading.chain_ref, 'Copy chain reference') }}</div>
+        <p class="tiny muted" style="margin-top:7px">Random reference, not derived from any personal data.</p>
+        <div class="form-actions"><a class="btn btn-outline btn-sm" href="{{ url_for('households.detail', household_id=reading.household_id) }}">{{ icon('arrow-right') }} Open household</a></div>
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head">
+        <div><div class="card-title">Alerts from this reading</div><div class="card-sub">Automatic rule evaluation</div></div>
+      </div>
+      <div class="card-body">
+        {% if alerts %}
+        <div class="stack-sm">
+          {% for a in alerts %}
+          <div class="alert-card {{ a.severity }}" style="padding:10px 12px">
+            <span class="alert-icon" style="width:28px;height:28px">{{ icon('alert' if a.severity != 'info' else 'info', 'icon-sm') }}</span>
+            <div class="alert-content">
+              <strong style="font-size:0.75rem">{{ a.title }}</strong>
+              <p style="font-size:0.7rem">{{ a.message }}</p>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="small muted center" style="padding:16px 0">No alerts were triggered by this reading.</p>
+        {% endif %}
+      </div>
+    </article>
+
+    <article class="card">
+      <div class="card-head"><div class="card-title">Canonical hash payload</div></div>
+      <div class="card-body">
+        <p class="tiny muted" style="margin-bottom:8px">The digest is computed from this deterministic string. Any change to a value produces a different hash.</p>
+        <div class="hash-box" style="font-size:0.62rem;line-height:1.7">
+          AquaLedger:v1|{{ reading.chain_ref }}|{{ reading.sequence }}|{{ reading.meter_id }}|{{ reading.reading_date.isoformat() }}|{{ '%.3f'|format(reading.previous_reading_m3) }}|{{ '%.3f'|format(reading.current_reading_m3) }}|{{ '%.2f'|format(reading.consumption_l) }}|{{ reading.created_at.strftime('%Y-%m-%dT%H:%M:%SZ') }}
+        </div>
+      </div>
+    </article>
+  </div>
+</div>
+
+<script type="application/json" id="readingData">{{ {
+  'id': reading.id,
+  'status': reading.status,
+  'mode': reading.chain_mode,
+  'wallet': current_user.wallet_address or '',
+  'wallet_verified': current_user.wallet_verified,
+  'verify_url': url_for('api.verify_reading', reading_id=reading.id),
+  'anchor_url': url_for('api.anchor_with_server', reading_id=reading.id),
+  'anchor_status_url': url_for('api.anchor_status', reading_id=reading.id),
+  'anchor_prepare_url': url_for('api.anchor_prepare', reading_id=reading.id),
+  'anchor_confirm_url': url_for('api.anchor_confirm', reading_id=reading.id)
+}|tojson }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/reading-detail.js') }}"></script>
+{% endblock %}

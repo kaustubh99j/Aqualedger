@@ -1,0 +1,216 @@
+{% extends 'base.html' %}
+{% from '_macros.html' import icon, copy_button %}
+{% block title %}Users &amp; wallets · AquaLedger{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <div>
+    <div class="eyebrow">Administration</div>
+    <h1>Users &amp; wallets</h1>
+    <p>Manage accounts and authorise verified MetaMask wallets to sign anchoring transactions.</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-primary" type="button" data-open-modal="createUserModal">{{ icon('plus') }} Add user</button>
+  </div>
+</div>
+
+<div class="banner info" style="margin-bottom:18px">
+  {{ icon('info') }}
+  <div>
+    <strong>Wallet authorisation happens on the contract.</strong>
+    Residents link a wallet from their profile by signing a free message. {% if chain_mode == 'sepolia' %}Once verified, use the buttons below to grant or revoke recorder permission on Sepolia.{% else %}In simulation mode the authorisation is recorded locally so the full workflow can be tested offline.{% endif %}
+  </div>
+</div>
+
+<article class="card">
+  <div class="card-head">
+    <div>
+      <div class="card-title">All accounts</div>
+      <div class="card-sub">{{ users|length }} account{{ '' if users|length == 1 else 's' }} · link and authorise wallets before MetaMask anchoring</div>
+    </div>
+    <span class="tag">{{ 'Simulation' if chain_mode == 'simulation' else 'Ethereum Sepolia' }}</span>
+  </div>
+  <div class="table-wrap">
+    {% if users %}
+    <table class="data">
+      <thead>
+        <tr>
+          <th>User</th>
+          <th>Role</th>
+          <th>Households / readings</th>
+          <th>MetaMask wallet</th>
+          <th>Last sign-in</th>
+          <th>Status</th>
+          <th class="right">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>
+            <div class="flex" style="gap:10px">
+              <span class="avatar">{{ u.name.split(' ')[0][0] }}{{ u.name.split(' ')[1][0] if u.name.split(' ')|length > 1 else '' }}</span>
+              <span>
+                <strong class="small" style="display:block">{{ u.name }}</strong>
+                <span class="tiny muted">{{ u.email }}</span>
+                {% if u.phone %}<span class="tiny muted" style="display:block">{{ u.phone }}</span>{% endif %}
+              </span>
+            </div>
+          </td>
+          <td><span class="badge badge-{{ 'teal' if u.role == 'admin' else 'neutral' }}">{{ u.role|title }}</span></td>
+          <td>
+            <strong class="small">{{ u.household_count }}</strong> <span class="tiny muted">household{{ '' if u.household_count == 1 else 's' }}</span><br>
+            <span class="tiny muted">{{ u.reading_count }} reading{{ '' if u.reading_count == 1 else 's' }}</span>
+          </td>
+          <td>
+            {% if u.wallet_address %}
+              <div class="mono tiny" style="margin-bottom:4px">{{ u.wallet_address|hash }} {{ copy_button(u.wallet_address, 'Copy wallet address') }}</div>
+              <div class="flex flex-wrap" style="gap:4px">
+                <span class="badge badge-{{ 'success' if u.wallet_verified else 'warning' }}">{{ 'Verified' if u.wallet_verified else 'Unverified' }}</span>
+                {% if u.wallet_authorized %}
+                <span class="badge badge-teal">Authorised</span>
+                {% else %}
+                <span class="badge badge-neutral">Not authorised</span>
+                {% endif %}
+                {% if u.auth_tx %}
+                <span class="tag mono" title="{{ u.auth_tx }}">{{ u.auth_mode or 'chain' }} · {{ u.auth_tx|hash }}</span>
+                {% endif %}
+              </div>
+            {% else %}
+              <span class="tiny muted">Not linked</span>
+            {% endif %}
+          </td>
+          <td class="small muted">{{ u.last_login|ago if u.last_login else 'Never' }}</td>
+          <td>
+            <span class="badge badge-{{ 'success' if u.is_active else 'danger' }}"><span class="dot"></span>{{ 'Active' if u.is_active else 'Inactive' }}</span>
+          </td>
+          <td class="right">
+            <div class="flex" style="justify-content:flex-end;gap:5px;flex-wrap:wrap">
+              {% if u.wallet_address and u.wallet_verified %}
+              <button class="btn btn-{{ 'danger' if u.wallet_authorized else 'outline' }} btn-sm" type="button"
+                      data-wallet-auth data-user-id="{{ u.id }}" data-allowed="{{ '0' if u.wallet_authorized else '1' }}"
+                      data-user-name="{{ u.name }}"
+                      data-loading="{{ 'Revoking...' if u.wallet_authorized else 'Authorising...' }}">
+                {{ icon('key', 'icon-sm') }} {{ 'Revoke' if u.wallet_authorized else 'Authorise' }}
+              </button>
+              {% endif %}
+              {% if u.id != current_user.id %}
+              <form method="post" action="{{ url_for('admin.change_role', user_id=u.id) }}" style="display:inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-ghost btn-sm" type="submit" data-confirm="Change {{ u.name }}'s role to {{ 'resident' if u.role == 'admin' else 'administrator' }}?">
+                  {{ icon('switch', 'icon-sm') }} {{ 'Make resident' if u.role == 'admin' else 'Make admin' }}
+                </button>
+              </form>
+              <form method="post" action="{{ url_for('admin.toggle_user', user_id=u.id) }}" style="display:inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-ghost btn-sm" type="submit" data-confirm="{{ 'Deactivate' if u.is_active else 'Reactivate' }} {{ u.name }}?">
+                  {{ icon('power', 'icon-sm') }} {{ 'Deactivate' if u.is_active else 'Reactivate' }}
+                </button>
+              </form>
+              {% endif %}
+              <button class="btn btn-ghost btn-sm" type="button" data-reset-user="{{ u.id }}" data-user-name="{{ u.name }}">
+                {{ icon('lock', 'icon-sm') }} Reset password
+              </button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">
+      <div class="empty-icon">{{ icon('users') }}</div>
+      <h3>No users</h3>
+      <p>Add the first account to get started.</p>
+    </div>
+    {% endif %}
+  </div>
+</article>
+
+<dialog class="modal" id="createUserModal">
+  <div class="modal-card">
+    <form method="post" action="{{ url_for('admin.create_user') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="modal-head">
+        <div>
+          <h3>Add user</h3>
+          <p>Create a resident or administrator account. Passwords are hashed with PBKDF2.</p>
+        </div>
+        <button class="modal-close" type="button" data-close-modal aria-label="Close">{{ icon('close', 'icon-sm') }}</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="field full">
+            <label for="new_user_name">Full name <span class="required">*</span></label>
+            <input class="input" id="new_user_name" name="name" maxlength="120" required>
+          </div>
+          <div class="field full">
+            <label for="new_user_email">Email address <span class="required">*</span></label>
+            <input class="input" id="new_user_email" name="email" type="email" maxlength="190" required>
+          </div>
+          <div class="field">
+            <label for="new_user_phone">Phone</label>
+            <input class="input" id="new_user_phone" name="phone" maxlength="30">
+          </div>
+          <div class="field">
+            <label for="new_user_role">Role</label>
+            <select class="select" id="new_user_role" name="role">
+              <option value="user">Resident account</option>
+              <option value="admin">Administrator</option>
+            </select>
+          </div>
+          <div class="field full">
+            <label for="new_user_password">Temporary password <span class="required">*</span></label>
+            <div class="password-field">
+              <input class="input" id="new_user_password" name="password" type="password" minlength="8" required>
+              <button class="password-toggle" type="button" data-password-toggle="new_user_password" aria-label="Show password">{{ icon('eye', 'icon-sm') }}</button>
+            </div>
+            <span class="hint">At least 8 characters with a letter and a number.</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-body" style="padding-top:0">
+        <div class="form-actions" style="margin-top:0">
+          <button class="btn btn-primary" type="submit" data-loading="Creating...">{{ icon('check') }} Create user</button>
+          <button class="btn btn-ghost" type="button" data-close-modal>Cancel</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<dialog class="modal" id="resetPasswordModal">
+  <div class="modal-card">
+    <form method="post" id="resetPasswordForm" action="">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="modal-head">
+        <div>
+          <h3>Reset password</h3>
+          <p>Set a new temporary password for <strong id="resetPasswordName">this user</strong>.</p>
+        </div>
+        <button class="modal-close" type="button" data-close-modal aria-label="Close">{{ icon('close', 'icon-sm') }}</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label for="reset_password_value">New password <span class="required">*</span></label>
+          <div class="password-field">
+            <input class="input" id="reset_password_value" name="password" type="password" minlength="8" required>
+            <button class="password-toggle" type="button" data-password-toggle="reset_password_value" aria-label="Show password">{{ icon('eye', 'icon-sm') }}</button>
+          </div>
+          <span class="hint">At least 8 characters with a letter and a number. Share it securely.</span>
+        </div>
+      </div>
+      <div class="modal-body" style="padding-top:0">
+        <div class="form-actions" style="margin-top:0">
+          <button class="btn btn-primary" type="submit" data-loading="Resetting...">{{ icon('key') }} Reset password</button>
+          <button class="btn btn-ghost" type="button" data-close-modal>Cancel</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin-users.js') }}"></script>
+{% endblock %}
